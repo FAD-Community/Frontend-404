@@ -4488,3 +4488,402 @@ input {
   outline: 2px solid var(--kd-teal-focus);
   outline-offset: 2px;
 }
+/* =========================================================
+   23) Students + API states  (الصق في آخر app.css)
+   ========================================================= */
+.stu-table--busy {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.stu-empty--error {
+  color: #c0262d;
+}
+
+.stu-retry {
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--kd-teal-btn);
+  font-size: 10px;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.pager__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Add student: الكود للقراءة بس + اختيار النوع + رسالة خطأ السيرفر */
+.as-code {
+  background: #f7f8fc;
+  color: var(--kd-ink);
+  cursor: default;
+}
+
+.as-seg {
+  display: flex;
+  gap: 8px;
+}
+
+.as-seg__btn {
+  flex: 1;
+  height: 35px;
+  border: 1px solid var(--kd-border);
+  border-radius: 10px;
+  background: var(--kd-white);
+  color: #4b5568;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.as-seg__btn:hover {
+  border-color: #c9d6e6;
+}
+
+.as-seg__btn:focus-visible {
+  outline: 2px solid var(--kd-teal-focus);
+  outline-offset: 2px;
+}
+
+.as-seg__btn.is-on {
+  border-color: #3aa6c6;
+  background: #e8f9fd;
+  color: var(--kd-teal-dark);
+  font-weight: 700;
+}
+
+.as-seg.is-invalid .as-seg__btn {
+  border-color: #ef8a8a;
+}
+
+.as-server-error {
+  margin: 4px 0 0;
+  font-size: 9px;
+}
+
+/* Transfer: نقل مجدول + رسالة خطأ */
+.tr-sched {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: #fff0d2;
+  color: #b5620a;
+}
+
+.tr-sched p {
+  margin: 0;
+  font-size: 9px;
+  line-height: 13px;
+}
+
+.tr-sched button {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #b5620a;
+  font-size: 9px;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.tr-error {
+  margin: 8px 0 0;
+  font-size: 9px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+/* =========================================================
+   24) Activation flow: Welcome + Create a password (.act-*)
+   (بيعتمد على .login-page / .login-brand / .login-main من صفحة Login)
+   ========================================================= */
+.act-main {
+  padding-bottom: 64px;
+}
+
+/* ---------- Welcome ---------- */
+.act-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 277px;
+  text-align: center;
+}
+
+.act-mark {
+  width: 52px;
+  height: 52px;
+  filter: drop-shadow(0 6px 12px rgba(34, 193, 230, 0.25));
+}
+
+.act-welcome__title {
+  margin: 10px 0 0;
+  font-size: 18px;
+  line-height: 22px;
+  font-weight: 800;
+  color: var(--kd-ink);
+}
+
+.act-welcome__text {
+  max-width: 250px;
+  margin: 8px 0 0;
+  font-size: 10px;
+  line-height: 15.6px;
+  color: var(--kd-muted);
+}
+
+.act-card {
+  width: 100%;
+  margin-top: 10px;
+  border-radius: 15px;
+  background: var(--kd-white);
+  box-shadow: 0 4px 16px rgba(30, 60, 110, 0.08);
+  text-align: left;
+}
+
+.act-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42.7px;
+  padding: 0 14px 0 13px;
+  border-bottom: 1px solid var(--kd-row-line);
+}
+
+.act-row:last-child {
+  border-bottom: 0;
+}
+
+.act-row__icon {
+  flex: none;
+  color: var(--kd-icon-muted);
+}
+
+.act-row__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.act-row__label {
+  font-size: 8.4px;
+  color: var(--kd-muted);
+}
+
+.act-row__value {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--kd-ink);
+  overflow-wrap: anywhere;
+}
+
+.act-pill {
+  flex: none;
+  margin-right: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #e6f2fd;
+  color: #2f6fb5;
+  font-size: 8.5px;
+  font-weight: 700;
+}
+
+.act-row__lock {
+  flex: none;
+  color: #b4bcc9;
+}
+
+.act-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #e6f2fd;
+  color: #2f62a6;
+  font-size: 9.5px;
+  line-height: 13.4px;
+  text-align: left;
+}
+
+.act-info svg {
+  flex: none;
+  margin-top: 1px;
+  color: #2f7fd1;
+}
+
+.act-continue {
+  height: 38px;
+  margin-top: 23px;
+  border-radius: 12px;
+  font-size: 10.5px;
+}
+
+/* ---------- Create a password ---------- */
+.act-form {
+  position: relative;
+  width: 100%;
+  max-width: 305px;
+}
+
+.act-form__sub {
+  margin: 1px 0 12px;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--kd-muted);
+}
+
+.act-form__sub strong {
+  font-weight: 800;
+  color: var(--kd-ink);
+}
+
+.act-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--kd-ink);
+}
+
+.act-label--confirm {
+  margin-top: 10px;
+}
+
+.act-input {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 37px;
+  padding: 0 12px 0 14px;
+  border: 1px solid var(--kd-border);
+  border-radius: 12px;
+  background: var(--kd-white);
+  color: var(--kd-icon-muted);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.act-input:focus-within {
+  border: 1.5px solid #22a6cc;
+  padding: 0 11.5px 0 13.5px;
+  box-shadow: 0 0 0 3px rgba(34, 166, 204, 0.1);
+  color: #1c8fb5;
+}
+
+.act-input--error,
+.act-input--error:focus-within {
+  border: 1.5px solid #ef8a8a;
+  padding: 0 11.5px 0 13.5px;
+  box-shadow: 0 0 0 3px rgba(239, 138, 138, 0.1);
+  color: #d64545;
+}
+
+.act-input__icon {
+  flex: none;
+}
+
+.act-input input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-size: 11px;
+  color: var(--kd-ink);
+}
+
+.act-eye {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--kd-icon-muted);
+  cursor: pointer;
+}
+
+.act-eye:focus-visible {
+  outline: 2px solid var(--kd-teal-focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.act-meter {
+  height: 5px;
+  margin: 12px 7px 0 0;
+  border-radius: 999px;
+  background: #e9ecf3;
+  overflow: hidden;
+}
+
+.act-meter__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.25s ease, background 0.25s ease;
+}
+
+.act-meter__fill--weak   { background: #e5484d; }
+.act-meter__fill--fair   { background: #f2994a; }
+.act-meter__fill--good   { background: #f5a623; }
+.act-meter__fill--strong { background: #22c08b; }
+
+.act-rules {
+  margin: 8.6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.act-rule {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 20px;
+  font-size: 9.5px;
+  color: var(--kd-muted);
+}
+
+.act-rule--ok {
+  color: #1e9e6a;
+}
+
+.act-error {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 4.5px 0 0;
+  font-size: 9.5px;
+  color: #d64545;
+}
+
+.act-submit {
+  position: absolute;
+  top: calc(100% + 16px);
+  right: 0;
+  left: 0;
+  margin-top: 0;
+}

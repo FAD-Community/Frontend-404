@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "react";
-import { CLASS_CARDS } from "../data/Classes";
-import { XIcon, CalendarIcon, ChevronDownIcon, HistoryIcon, SwapIcon } from "./Icons";
+import { getStudent, cancelTransfer, findScheduledTransfer, toId } from "../api/students";
+import { XIcon, CalendarIcon, ChevronDownIcon, HistoryIcon, SwapIcon, AlertTriangleIcon } from "./Icons";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -19,48 +19,46 @@ const todayIso = () => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
 
-// بنقرا الفصول المحفوظة (نفس مفتاح صفحة Classes) علشان نعرف مدرّس كل فصل
-function loadClasses() {
-  try {
-    const raw = localStorage.getItem("kidoo.classes.v1");
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch {
-    /* ignore */
-  }
-  return CLASS_CARDS;
-}
-
-// اختيار مبدئي مطابق للتصميم (Salma: Sunflowers -> Bumblebees). غيّره/امسحه لو مش عاوزه.
-const DEMO_TARGET = "Bumblebees";
+const labelOf = (c) => (c ? `${c.name}${c.level ? ` · ${c.level}` : ""}` : "");
 
 /**
  * Props:
- *  - student: الطالب اللي هيتنقل
- *  - onClose(), onSubmit({className, effective, from})
- *  استدعيه بـ {student && <TransferStudentModal key={student.id} .../>} علشان الاختيار يتصفّر عند كل فتح
+ *  - student: الطالب اللي هيتنقل (شكل الـ UI: id, name, code, classId, className)
+ *  - classes: [{id, name, level, teacherName?}] من الـ API
+ *  - onClose()
+ *  - onSubmit({classId, effectiveFrom}): async — لو رمى خطأ بيتعرض جوه النافذة
+ *  - onScheduleChanged(): بيتنادى بعد إلغاء نقل مجدول (علشان الصفحة تعمل refresh)
+ *  استدعيه بـ {student && <TransferStudentModal key={student.id} .../>}
  */
-export default function TransferStudentModal({ student, onClose, onSubmit }) {
+export default function TransferStudentModal({ student, classes = [], onClose, onSubmit, onScheduleChanged }) {
   const uid = useId();
-  const classes = loadClasses();
 
-  const fromClass = CLASS_CARDS.find((c) => c.name === student.className);
-  const fromLabel = fromClass ? `${fromClass.name} · ${fromClass.level}` : student.className;
+  const fromClass = classes.find((c) => String(c.id) === String(student.classId));
+  const fromLabel = fromClass ? labelOf(fromClass) : student.className;
 
-  const options = CLASS_CARDS.filter((c) => c.name !== student.className);
-  const [toName, setToName] = useState(
-    (options.find((c) => c.name === DEMO_TARGET) || options[0])?.name || ""
-  );
+  const options = classes.filter((c) => String(c.id) !== String(student.classId));
+  const [toId_, setToId] = useState(options[0] ? String(options[0].id) : "");
   const [effective, setEffective] = useState(todayIso());
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
-  const toClass = CLASS_CARDS.find((c) => c.name === toName);
-  const teacher = classes.find((c) => c.id === toClass?.id)?.teacher || null;
+  // النقل المجدول الحالي (من GET /students/{id})
+  const [scheduled, setScheduled] = useState(null);
+  const [cancelling, setCancelling] = useState(false);
+
+  const toClass = classes.find((c) => String(c.id) === toId_);
   const firstName = student.name.trim().split(" ")[0];
 
   useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && onClose?.();
+    const controller = new AbortController();
+    getStudent(student.id, { signal: controller.signal })
+      .then((detail) => setScheduled(findScheduledTransfer(detail)))
+      .catch(() => {});
+    return () => controller.abort();
+  }, [student.id]);
+
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && !submitting && onClose?.();
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -68,18 +66,41 @@ export default function TransferStudentModal({ student, onClose, onSubmit }) {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [onClose]);
+  }, [onClose, submitting]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!toName || !effective) return;
-    onSubmit?.({ className: toName, effective, from: student.className });
+    if (!toId_ || !effective || submitting) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      await onSubmit?.({ classId: toId(toId_), effectiveFrom: effective });
+    } catch (err) {
+      setError(err?.fieldErrors?.classId || err?.fieldErrors?.effectiveFrom || err?.message || "Couldn’t transfer the student.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCancelScheduled = async () => {
+    if (!scheduled || cancelling) return;
+    setCancelling(true);
+    setError("");
+    try {
+      await cancelTransfer(student.id, scheduled.id);
+      setScheduled(null);
+      onScheduleChanged?.();
+    } catch (err) {
+      setError(err?.message || "Couldn’t cancel the scheduled transfer.");
+    } finally {
+      setCancelling(false);
+    }
   };
 
   return (
     <div
       className="modal-overlay modal-overlay--top"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}
+      onMouseDown={(e) => e.target === e.currentTarget && !submitting && onClose?.()}
     >
       <form
         className="tr-modal"
@@ -95,7 +116,7 @@ export default function TransferStudentModal({ student, onClose, onSubmit }) {
           <p className="tr-sub">
             #{student.code} · currently in {fromLabel}
           </p>
-          <button type="button" className="na-close tr-close" onClick={onClose} aria-label="Close">
+          <button type="button" className="na-close tr-close" onClick={onClose} aria-label="Close" disabled={submitting}>
             <XIcon size={14} />
           </button>
         </header>
@@ -108,12 +129,14 @@ export default function TransferStudentModal({ student, onClose, onSubmit }) {
             <div className="na-select tr-to">
               <select
                 aria-label="New class"
-                value={toName}
-                onChange={(e) => setToName(e.target.value)}
+                value={toId_}
+                onChange={(e) => setToId(e.target.value)}
+                disabled={options.length === 0}
               >
+                {options.length === 0 && <option value="">No other classes</option>}
                 {options.map((c) => (
-                  <option key={c.id} value={c.name}>
-                    {c.name} · {c.level}
+                  <option key={c.id} value={c.id}>
+                    {labelOf(c)}
                   </option>
                 ))}
               </select>
@@ -131,6 +154,7 @@ export default function TransferStudentModal({ student, onClose, onSubmit }) {
               id={`${uid}-date`}
               type="date"
               value={effective}
+              min={todayIso()}
               onChange={(e) => setEffective(e.target.value)}
               onClick={(e) => e.currentTarget.showPicker?.()}
               aria-label="Effective from"
@@ -141,27 +165,44 @@ export default function TransferStudentModal({ student, onClose, onSubmit }) {
             <HistoryIcon size={13} className="na-info__icon" />
             <p>
               Past records keep “{student.className}” as their class. From the effective date,{" "}
-              {teacher ? (
+              {toClass?.teacherName ? (
                 <>
-                  only {teacher.name} ({toName}) can log activities for {firstName} (FR-17).
+                  only {toClass.teacherName} ({toClass.name}) can log activities for {firstName} (FR-17).
                 </>
               ) : (
                 <>
-                  {toName} has no teacher yet, so no one can log activities for {firstName} until
-                  one is assigned (FR-17).
+                  only the teacher of {toClass?.name || "the new class"} can log activities for {firstName} (FR-17).
                 </>
               )}
             </p>
           </div>
+
+          {scheduled && (
+            <div className="tr-sched" role="status">
+              <p>
+                A transfer to <strong>{scheduled.class?.name || "another class"}</strong> is already scheduled
+                {scheduled.effectiveFrom ? ` from ${formatLongDate(scheduled.effectiveFrom)}` : ""}.
+              </p>
+              <button type="button" onClick={handleCancelScheduled} disabled={cancelling}>
+                {cancelling ? "Cancelling…" : "Cancel scheduled transfer"}
+              </button>
+            </div>
+          )}
+
+          {error && (
+            <p className="na-error tr-error" role="alert">
+              <AlertTriangleIcon size={12} /> {error}
+            </p>
+          )}
         </div>
 
         {/* ===== Footer ===== */}
         <footer className="tr-foot">
-          <button type="button" className="btn-outline tr-btn" onClick={onClose}>
+          <button type="button" className="btn-outline tr-btn" onClick={onClose} disabled={submitting}>
             Cancel
           </button>
-          <button type="submit" className="btn-primary tr-btn" disabled={!toName || !effective}>
-            Transfer student
+          <button type="submit" className="btn-primary tr-btn" disabled={!toId_ || !effective || submitting}>
+            {submitting ? "Transferring…" : "Transfer student"}
           </button>
         </footer>
       </form>

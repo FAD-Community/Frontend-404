@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Topbar from "../components/Topbar";
 import AddStudentDrawer from "../components/Addstudentdrawer";
 import TransferStudentModal from "../components/Transferstudentmodal ";
-import { STUDENTS, STUDENT_TABS } from "../data/Students";
-import { PlusIcon, KebabIcon } from "../components/Icons";
+import { PlusIcon, KebabIcon, ChevronLeftIcon, ChevronRightIcon } from "../components/Icons";
+import { listStudents, createStudent, transferStudent } from "../api/students";
+import { listClasses } from "../api/Classes";
+
+const PAGE_SIZE = 8;
 
 const initialsOf = (name = "") =>
   name
@@ -14,75 +17,114 @@ const initialsOf = (name = "") =>
     .slice(0, 2)
     .toUpperCase();
 
-const STORAGE_KEY = "kidoo.students.v1";
-const TONES = ["amber", "blue", "green", "red", "cyan"];
-
-function loadStudents() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch {
-    /* ignore */
-  }
-  return STUDENTS;
-}
-
 /**
- * صفحة الطلاب.
- * إضافة طالب (Add student) بتتحفظ في localStorage وبتظهر في الجدول.
- * النقط الثلاثة بتفتح نافذة نقل الطالب لفصل تاني (Transfer student).
+ * صفحة الطلاب (متوصّلة بالـ API).
+ *  - GET  /students?page&pageSize&classId   قايمة الطلاب (مع Pagination وفلتر الفصل)
+ *  - POST /students                         Add student
+ *  - POST /students/{id}/transfers          Transfer student (النقط الثلاثة)
+ *  - GET  /classes                          تابات الفصول (افتراضي – راجع api/classes.js)
  */
 export default function Students({ onStudentMenu }) {
-  const [students, setStudents] = useState(loadStudents);
-  const [tab, setTab] = useState("All classes");
+  const [rows, setRows] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [classFilter, setClassFilter] = useState("all"); // "all" أو id الفصل
+  const [apiClasses, setApiClasses] = useState([]);
+  const [seenClasses, setSeenClasses] = useState([]); // فصول مستنتجة من الطلاب (احتياطي لو /classes مش شغال)
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
   const [addOpen, setAddOpen] = useState(false);
-  const [transferId, setTransferId] = useState(null); // الطالب اللي بيتنقل
-  const transferring = students.find((s) => s.id === transferId);
+  const [transferTarget, setTransferTarget] = useState(null); // الطالب اللي بيتنقل
 
+  const reload = useCallback(() => setReloadKey((k) => k + 1), []);
+
+  /* ----- الفصول (التابات + اختيارات الفصل في النماذج) — بتتحمل تاني مع Retry ----- */
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(students));
-    } catch {
-      /* ignore */
-    }
-  }, [students]);
+    const controller = new AbortController();
+    listClasses({ signal: controller.signal })
+      .then(setApiClasses)
+      .catch(() => {});
+    return () => controller.abort();
+  }, [reloadKey]);
 
-  // أول فتح (لسه مفيش طلاب مضافين) بيظهر الفورم بالقيم التجريبية اللي في التصميم
-  const demo = students.every((s) => STUDENTS.some((seed) => seed.id === s.id));
+  const classes = useMemo(() => {
+    const map = new Map();
+    [...apiClasses, ...seenClasses].forEach((c) => {
+      if (!map.has(String(c.id))) map.set(String(c.id), c);
+    });
+    return [...map.values()];
+  }, [apiClasses, seenClasses]);
 
-  /** نقل طالب لفصل تاني: السجلات القديمة بتفضل باسم الفصل القديم، والنقل بيتسجل في transfers */
-  const transferStudent = (id, { className, effective, from }) => {
-    setStudents((list) =>
-      list.map((s) =>
-        s.id === id
-          ? {
-              ...s,
-              className,
-              transfers: [
-                ...(s.transfers || []),
-                { from, to: className, effective, at: new Date().toISOString() },
-              ],
-            }
-          : s
-      )
-    );
-    setTransferId(null);
+  /* ----- الطلاب ----- */
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+
+    listStudents({
+      page,
+      pageSize: PAGE_SIZE,
+      classId: classFilter === "all" ? undefined : classFilter,
+      signal: controller.signal,
+    })
+      .then((res) => {
+        setRows(res.items);
+        setTotal(res.total);
+        // لو الصفحة الحالية بقت فاضية (مثلاً بعد نقل آخر طالب فيها) نرجع صفحة
+        if (res.items.length === 0 && page > 1) setPage((p) => p - 1);
+        setSeenClasses((prev) => {
+          const known = new Set(prev.map((c) => String(c.id)));
+          const fresh = res.items
+            .filter((s) => s.classId != null && !known.has(String(s.classId)))
+            .map((s) => ({ id: s.classId, name: s.className, level: "", teacherName: "" }));
+          return fresh.length ? [...prev, ...fresh] : prev;
+        });
+      })
+      .catch((err) => {
+        if (err?.name === "AbortError") return;
+        setError(err);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [page, classFilter, reloadKey]);
+
+  /* ----- إجراءات ----- */
+  const selectClass = (id) => {
+    setClassFilter(id);
+    setPage(1);
   };
 
-  const addStudent = (data) => {
-    const tone = TONES[[...data.name].reduce((n, c) => n + c.charCodeAt(0), 0) % TONES.length];
-    setStudents((list) => [...list, { id: `stu-${Date.now()}`, avatar: tone, ...data }]);
-    setTab("All classes");
+  const addStudent = async (body) => {
+    await createStudent(body); // لو فيه خطأ بيتعرض جوه الدرج
     setAddOpen(false);
+    setClassFilter("all");
+    setPage(1);
+    reload();
   };
 
-  const rows = useMemo(
-    () => (tab === "All classes" ? students : students.filter((s) => s.className === tab)),
-    [students, tab]
-  );
+  const doTransfer = async (student, { classId, effectiveFrom }) => {
+    await transferStudent(student.id, { classId, effectiveFrom });
+    setTransferTarget(null);
+    reload();
+  };
+
+  /* ----- Pagination ----- */
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const to = from === 0 ? 0 : from + rows.length - 1;
+  const pageNumbers = (() => {
+    const start = Math.max(1, Math.min(page - 2, totalPages - 4));
+    const end = Math.min(totalPages, start + 4);
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  })();
+
+  const tabs = [{ id: "all", name: "All classes" }, ...classes];
+  const firstLoad = loading && rows.length === 0 && !error;
 
   return (
     <>
@@ -102,16 +144,16 @@ export default function Students({ onStudentMenu }) {
           {/* ===== Tabs ===== */}
           <div className="acc-toolbar stu-toolbar">
             <div className="acc-tabs stu-tabs" role="tablist" aria-label="Classes">
-              {STUDENT_TABS.map((name) => (
+              {tabs.map((c) => (
                 <button
-                  key={name}
+                  key={c.id}
                   type="button"
                   role="tab"
-                  aria-selected={tab === name}
-                  className={`acc-tab${tab === name ? " acc-tab--active" : ""}`}
-                  onClick={() => setTab(name)}
+                  aria-selected={String(classFilter) === String(c.id)}
+                  className={`acc-tab${String(classFilter) === String(c.id) ? " acc-tab--active" : ""}`}
+                  onClick={() => selectClass(c.id)}
                 >
-                  {name}
+                  {c.name}
                 </button>
               ))}
             </div>
@@ -119,7 +161,7 @@ export default function Students({ onStudentMenu }) {
 
           {/* ===== Table ===== */}
           <div className="acc-scroll">
-            <table className="acc-table stu-table">
+            <table className={`acc-table stu-table${loading && rows.length > 0 ? " stu-table--busy" : ""}`}>
               <colgroup>
                 <col style={{ width: "26.9%" }} />
                 <col style={{ width: "13.8%" }} />
@@ -167,7 +209,7 @@ export default function Students({ onStudentMenu }) {
                         className="acc-kebab"
                         aria-label={`Actions for ${s.name}`}
                         onClick={() => {
-                          setTransferId(s.id);
+                          setTransferTarget(s);
                           onStudentMenu?.(s);
                         }}
                       >
@@ -177,34 +219,95 @@ export default function Students({ onStudentMenu }) {
                   </tr>
                 ))}
 
-                {rows.length === 0 && (
+                {firstLoad && (
+                  <tr>
+                    <td colSpan={6} className="stu-empty" role="status">
+                      Loading students…
+                    </td>
+                  </tr>
+                )}
+
+                {error && (
+                  <tr>
+                    <td colSpan={6} className="stu-empty stu-empty--error" role="alert">
+                      {error.message}{" "}
+                      <button type="button" className="stu-retry" onClick={reload}>
+                        Retry
+                      </button>
+                    </td>
+                  </tr>
+                )}
+
+                {!loading && !error && rows.length === 0 && (
                   <tr>
                     <td colSpan={6} className="stu-empty">
-                      No students in this class yet.
+                      {classFilter === "all" ? "No students yet." : "No students in this class yet."}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+
+          {/* ===== Footer / Pagination (بيظهر بس لو فيه أكتر من صفحة) ===== */}
+          {total > PAGE_SIZE && (
+            <div className="acc-footer">
+              <span>
+                Showing {from}–{to} of {total}
+              </span>
+
+              <div className="pager">
+                <button
+                  type="button"
+                  className="pager__btn"
+                  aria-label="Previous page"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronLeftIcon size={14} />
+                </button>
+                {pageNumbers.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={`pager__btn${page === n ? " pager__btn--active" : ""}`}
+                    aria-current={page === n ? "page" : undefined}
+                    onClick={() => setPage(n)}
+                  >
+                    {n}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="pager__btn"
+                  aria-label="Next page"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  <ChevronRightIcon size={14} />
+                </button>
+              </div>
+            </div>
+          )}
         </section>
       </div>
 
       {/* ===== Transfer student ===== */}
-      {transferring && (
+      {transferTarget && (
         <TransferStudentModal
-          key={transferring.id}
-          student={transferring}
-          onClose={() => setTransferId(null)}
-          onSubmit={(data) => transferStudent(transferring.id, data)}
+          key={transferTarget.id}
+          student={transferTarget}
+          classes={classes}
+          onClose={() => setTransferTarget(null)}
+          onSubmit={(data) => doTransfer(transferTarget, data)}
+          onScheduleChanged={reload}
         />
       )}
 
       {/* ===== Add student ===== */}
       {addOpen && (
         <AddStudentDrawer
-          students={students}
-          demo={demo}
+          classes={classes}
           onClose={() => setAddOpen(false)}
           onSubmit={addStudent}
         />

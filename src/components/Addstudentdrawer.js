@@ -1,6 +1,6 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { CLASS_CARDS } from "../data/Classes";
-import { PARENTS } from "../data/Students";
+import { useEffect, useId, useRef, useState } from "react";
+import { nextStudentCode, toId } from "../api/students";
+import { searchParents } from "../api/Parents";
 import {
   XIcon,
   CalendarIcon,
@@ -10,6 +10,7 @@ import {
 } from "./Icons";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const GENDERS = ["Male", "Female"];
 
 /** "2022-02-04" -> "04 Feb 2022" */
 export function formatDob(iso) {
@@ -18,84 +19,87 @@ export function formatDob(iso) {
   return `${String(d).padStart(2, "0")} ${MONTHS[m - 1]} ${y}`;
 }
 
-/** الكود المقترح: أعلى رقم KD-#### موجود + 1 */
-export function suggestCode(students) {
-  const max = students.reduce((n, s) => {
-    const m = /(\d+)\s*$/.exec(s.code || "");
-    return m ? Math.max(n, Number(m[1])) : n;
-  }, 1000);
-  return `KD-${max + 1}`;
-}
-
-// قيم أول فتح = نفس التصميم. بعد أول طالب بتضيفه الفورم بيتفتح فاضي.
-const DEMO_FORM = {
-  fullName: "Jana Walid",
-  dob: "2022-02-04",
-  className: "Sunflowers",
-  parents: ["Walid Ezz"],
-};
-const EMPTY_FORM = { fullName: "", dob: "", className: "", parents: [] };
+const EMPTY_FORM = { fullName: "", dob: "", gender: "", classId: "", parents: [] };
 
 /**
  * Props:
- *  - students: الطلاب الحاليين (لاقتراح الكود وفحص التكرار)
- *  - demo: true = يفتح بالقيم التجريبية اللي في التصميم
- *  - classes: [{name, level}] (الافتراضي من data/Classes)
- *  - parentsDirectory: أسماء أولياء الأمور المتاحين للربط
- *  - onClose(), onSubmit({name, dob, code, className, parents})
+ *  - classes: [{id, name, level}] (من الـ API)
+ *  - onClose()
+ *  - onSubmit({fullName, dateOfBirth, gender, classId, parentIds}): async — لو رمى خطأ بيتعرض جوه الدرج
  *  استدعيه بـ {open && <AddStudentDrawer .../>} علشان الفورم يتصفّر عند كل فتح
  */
-export default function AddStudentDrawer({
-  students = [],
-  demo = false,
-  classes = CLASS_CARDS,
-  parentsDirectory = PARENTS,
-  onClose,
-  onSubmit,
-}) {
+export default function AddStudentDrawer({ classes = [], onClose, onSubmit }) {
   const uid = useId();
-  const [form, setForm] = useState(() => ({
-    ...(demo ? DEMO_FORM : EMPTY_FORM),
-    code: suggestCode(students),
-  }));
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [code, setCode] = useState("");
+  const [codeState, setCodeState] = useState("loading"); // loading | ready | failed
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [serverError, setServerError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
+
   const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
   const [suggestOpen, setSuggestOpen] = useState(false);
   const searchRef = useRef(null);
 
-  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
-
-  const code = form.code.trim();
-  const codeTaken = students.some((s) => s.code.toLowerCase() === code.toLowerCase());
-  const today = new Date().toISOString().slice(0, 10);
-  const bad = {
-    fullName: submitted && form.fullName.trim().length < 2,
-    dob: submitted && (!form.dob || form.dob > today),
-    code: submitted && !code,
-    className: submitted && !form.className,
+  const set = (key) => (e) => {
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+    setFieldErrors((errs) => ({ ...errs, [key === "dob" ? "dateOfBirth" : key]: undefined }));
   };
 
-  /* ----- ربط أولياء الأمور ----- */
-  const q = query.trim().toLowerCase();
-  const suggestions = useMemo(
-    () =>
-      parentsDirectory
-        .filter((n) => !form.parents.includes(n) && (!q || n.toLowerCase().includes(q)))
-        .slice(0, 6),
-    [parentsDirectory, form.parents, q]
-  );
+  const today = new Date().toISOString().slice(0, 10);
+  const bad = {
+    fullName: (submitted && form.fullName.trim().length < 2) || !!fieldErrors.fullName,
+    dob: (submitted && (!form.dob || form.dob > today)) || !!fieldErrors.dateOfBirth,
+    gender: (submitted && !form.gender) || !!fieldErrors.gender,
+    classId: (submitted && !form.classId) || !!fieldErrors.classId,
+  };
 
-  const addParent = (name) => {
-    setForm((f) => (f.parents.includes(name) ? f : { ...f, parents: [...f.parents, name] }));
+  /* ----- الكود المقترح من الـ API ----- */
+  useEffect(() => {
+    const controller = new AbortController();
+    nextStudentCode({ signal: controller.signal })
+      .then((c) => {
+        setCode(c);
+        setCodeState(c ? "ready" : "failed");
+      })
+      .catch((err) => {
+        if (err?.name !== "AbortError") setCodeState("failed");
+      });
+    return () => controller.abort();
+  }, []);
+
+  /* ----- البحث عن أولياء الأمور (debounce) ----- */
+  useEffect(() => {
+    if (!suggestOpen) return undefined;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      searchParents(query.trim(), { signal: controller.signal })
+        .then(setResults)
+        .catch(() => {});
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query, suggestOpen]);
+
+  const suggestions = results.filter((p) => !form.parents.some((x) => String(x.id) === String(p.id)));
+
+  const addParent = (parent) => {
+    setForm((f) =>
+      f.parents.some((x) => String(x.id) === String(parent.id)) ? f : { ...f, parents: [...f.parents, parent] }
+    );
     setQuery("");
     setSuggestOpen(false);
   };
 
-  const removeParent = (name) =>
-    setForm((f) => ({ ...f, parents: f.parents.filter((n) => n !== name) }));
+  const removeParent = (id) =>
+    setForm((f) => ({ ...f, parents: f.parents.filter((p) => String(p.id) !== String(id)) }));
 
   useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && onClose?.();
+    const onKey = (e) => e.key === "Escape" && !submitting && onClose?.();
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -103,42 +107,49 @@ export default function AddStudentDrawer({
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [onClose]);
+  }, [onClose, submitting]);
 
-  // قفل قايمة الاقتراحات بالضغط برا
   useEffect(() => {
-    if (!suggestOpen) return;
+    if (!suggestOpen) return undefined;
     const onDown = (e) => searchRef.current && !searchRef.current.contains(e.target) && setSuggestOpen(false);
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [suggestOpen]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitted(true);
-    if (
-      form.fullName.trim().length < 2 ||
-      !form.dob ||
-      form.dob > today ||
-      !code ||
-      codeTaken ||
-      !form.className
-    )
-      return;
+    setServerError("");
+    if (form.fullName.trim().length < 2 || !form.dob || form.dob > today || !form.gender || !form.classId) return;
 
-    onSubmit?.({
-      name: form.fullName.trim(),
-      dob: formatDob(form.dob),
-      code,
-      className: form.className,
-      parents: form.parents,
-    });
+    setSubmitting(true);
+    try {
+      await onSubmit?.({
+        fullName: form.fullName.trim(),
+        dateOfBirth: form.dob,
+        gender: form.gender,
+        classId: toId(form.classId),
+        parentIds: form.parents.map((p) => p.id),
+      });
+    } catch (err) {
+      setFieldErrors(err?.fieldErrors || {});
+      setServerError(err?.message || "Couldn’t add the student. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  const FieldError = ({ name }) =>
+    fieldErrors[name] ? (
+      <p className="na-error as-help" role="alert">
+        <AlertTriangleIcon size={11} /> {fieldErrors[name]}
+      </p>
+    ) : null;
 
   return (
     <div
       className="drawer-overlay"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}
+      onMouseDown={(e) => e.target === e.currentTarget && !submitting && onClose?.()}
     >
       <form
         className="drawer as"
@@ -152,7 +163,7 @@ export default function AddStudentDrawer({
         <header className="as-head">
           <h2 className="na-title" id={`${uid}-title`}>Add student</h2>
           <p className="na-sub">All fields are required (FR-16).</p>
-          <button type="button" className="na-close drawer__close" onClick={onClose} aria-label="Close">
+          <button type="button" className="na-close drawer__close" onClick={onClose} aria-label="Close" disabled={submitting}>
             <XIcon size={14} />
           </button>
         </header>
@@ -168,7 +179,9 @@ export default function AddStudentDrawer({
               onChange={set("fullName")}
               placeholder="e.g. Jana Walid"
               autoComplete="off"
+              autoFocus
             />
+            <FieldError name="fullName" />
           </div>
 
           <div className="as-row">
@@ -189,24 +202,22 @@ export default function AddStudentDrawer({
                   aria-label="Date of birth"
                 />
               </div>
+              <FieldError name="dateOfBirth" />
             </div>
 
             <div className="na-field">
               <label className="na-label" htmlFor={`${uid}-code`}>Student code</label>
               <input
                 id={`${uid}-code`}
-                className={`na-input${bad.code || (submitted && codeTaken) ? " is-invalid" : ""}`}
-                value={form.code}
-                onChange={set("code")}
-                autoComplete="off"
+                className="na-input as-code"
+                value={codeState === "loading" ? "" : code || "Auto"}
+                placeholder={codeState === "loading" ? "…" : ""}
+                readOnly
+                aria-readonly="true"
               />
-              {submitted && codeTaken ? (
-                <p className="na-error as-help" role="alert">
-                  <AlertTriangleIcon size={11} /> Code already in use
-                </p>
-              ) : (
-                <p className="as-help">Unique · auto-suggested</p>
-              )}
+              <p className="as-help">
+                {codeState === "failed" ? "Assigned by the server" : "Unique · auto-suggested"}
+              </p>
             </div>
           </div>
 
@@ -215,19 +226,43 @@ export default function AddStudentDrawer({
             <div className="na-select as-select">
               <select
                 id={`${uid}-class`}
-                className={bad.className ? "is-invalid" : ""}
-                value={form.className}
-                onChange={set("className")}
+                className={bad.classId ? "is-invalid" : ""}
+                value={form.classId}
+                onChange={set("classId")}
               >
                 <option value="">Select a class</option>
                 {classes.map((c) => (
-                  <option key={c.id} value={c.name}>
-                    {c.name} · {c.level}
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                    {c.level ? ` · ${c.level}` : ""}
                   </option>
                 ))}
               </select>
               <ChevronDownIcon size={14} className="na-select__chev" />
             </div>
+            <FieldError name="classId" />
+          </div>
+
+          <div className="na-field">
+            <span className="na-label" id={`${uid}-gender`}>Gender</span>
+            <div className={`as-seg${bad.gender ? " is-invalid" : ""}`} role="radiogroup" aria-labelledby={`${uid}-gender`}>
+              {GENDERS.map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  role="radio"
+                  aria-checked={form.gender === g}
+                  className={`as-seg__btn${form.gender === g ? " is-on" : ""}`}
+                  onClick={() => {
+                    setForm((f) => ({ ...f, gender: g }));
+                    setFieldErrors((errs) => ({ ...errs, gender: undefined }));
+                  }}
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
+            <FieldError name="gender" />
           </div>
 
           <div className="na-field as-parents" ref={searchRef}>
@@ -262,10 +297,10 @@ export default function AddStudentDrawer({
                 {suggestions.length === 0 ? (
                   <li className="as-suggest__empty">No parent accounts found</li>
                 ) : (
-                  suggestions.map((n) => (
-                    <li key={n}>
-                      <button type="button" role="option" onClick={() => addParent(n)}>
-                        {n}
+                  suggestions.map((p) => (
+                    <li key={p.id}>
+                      <button type="button" role="option" onClick={() => addParent(p)}>
+                        {p.name}
                       </button>
                     </li>
                   ))
@@ -275,10 +310,10 @@ export default function AddStudentDrawer({
 
             {form.parents.length > 0 && (
               <div className="as-chips">
-                {form.parents.map((n) => (
-                  <span className="as-chip" key={n}>
-                    {n}
-                    <button type="button" onClick={() => removeParent(n)} aria-label={`Remove ${n}`}>
+                {form.parents.map((p) => (
+                  <span className="as-chip" key={p.id}>
+                    {p.name}
+                    <button type="button" onClick={() => removeParent(p.id)} aria-label={`Remove ${p.name}`}>
                       <XIcon size={9} strokeWidth={2.6} />
                     </button>
                   </span>
@@ -286,15 +321,21 @@ export default function AddStudentDrawer({
               </div>
             )}
           </div>
+
+          {serverError && (
+            <p className="na-error as-server-error" role="alert">
+              <AlertTriangleIcon size={12} /> {serverError}
+            </p>
+          )}
         </div>
 
         {/* ===== Footer ===== */}
         <footer className="drawer__foot">
-          <button type="button" className="btn-outline drawer__btn" onClick={onClose}>
+          <button type="button" className="btn-outline drawer__btn" onClick={onClose} disabled={submitting}>
             Cancel
           </button>
-          <button type="submit" className="btn-primary drawer__btn">
-            Add student
+          <button type="submit" className="btn-primary drawer__btn" disabled={submitting}>
+            {submitting ? "Adding…" : "Add student"}
           </button>
         </footer>
       </form>
