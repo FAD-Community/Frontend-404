@@ -46,8 +46,6 @@ function AdminStatus({ status }) {
 
   return <span className="tag tag--slate">{status}</span>;
 }
-
-/* قائمة الإجراءات التي تظهر عند الضغط على الثلاث نقط */
 function AdminActions({ admin, onDelete }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);

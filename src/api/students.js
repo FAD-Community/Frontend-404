@@ -14,7 +14,6 @@ import { api } from "./http";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const TONES = ["amber", "blue", "green", "red", "cyan"];
 
-/** "2022-03-14" -> "14 Mar 2022" (من غير مشاكل Timezone) */
 export function formatDate(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
   if (!m) return iso || "";
@@ -27,8 +26,6 @@ const toneFor = (seed) => {
   for (let i = 0; i < text.length; i += 1) sum += text.charCodeAt(i);
   return TONES[sum % TONES.length];
 };
-
-/** شكل الـ API -> الشكل اللي بتستخدمه الصفحات */
 export function toUiStudent(s) {
   const parents = s.parents || [];
   return {
@@ -49,62 +46,65 @@ export function toUiStudent(s) {
   };
 }
 
-/** GET /students -> { items, page, pageSize, total } */
-export async function listStudents({ page = 1, pageSize = 8, classId, signal } = {}) {
-  const res = await api.get("/students", { params: { page, pageSize, classId }, signal });
+export async function listStudents({
+  page = 1,
+  pageSize = 8,
+  classId,
+  signal,
+} = {}) {
+  const res = await api.get("/students", {
+    params: { page, pageSize, classId },
+    signal,
+  });
+
+  const rawItems = Array.isArray(res)
+    ? res
+    : Array.isArray(res?.items)
+      ? res.items
+      : res && typeof res === "object" && res.id != null
+        ? [res]
+        : [];
+
   return {
-    items: (res?.items || []).map(toUiStudent),
+    items: rawItems.map(toUiStudent),
     page: res?.page ?? page,
     pageSize: res?.pageSize ?? pageSize,
-    total: res?.total ?? (res?.items || []).length,
+    total: res?.total ?? rawItems.length,
   };
 }
 
-/** GET /students/{id} */
 export async function getStudent(id, { signal } = {}) {
   return toUiStudent(await api.get(`/students/${id}`, { signal }));
 }
 
-/**
- * POST /students
- * body: { fullName, dateOfBirth: "YYYY-MM-DD", gender: "Male"|"Female", classId, parentIds: [] }
- */
 export async function createStudent(body) {
   return toUiStudent(await api.post("/students", body));
 }
 
-/** PUT /students/{id} (نفس شكل بيانات الإضافة) */
 export async function updateStudent(id, body) {
   return toUiStudent(await api.put(`/students/${id}`, body));
 }
 
-/** GET /students/next-code -> "KD-1062" (بيقبل string أو { code } أو { studentCode } أو { nextCode }) */
 export async function nextStudentCode({ signal } = {}) {
   const res = await api.get("/students/next-code", { signal });
   if (typeof res === "string") return res;
   return res?.studentCode || res?.code || res?.nextCode || res?.value || "";
 }
 
-/**
- * POST /students/{id}/transfers
- * body: { classId, effectiveFrom: "YYYY-MM-DD" }
- * لو تاريخ السريان في المستقبل الباك بيعمل نقل "مجدول" (Scheduled) ويرجع enrollment
- */
 export async function transferStudent(id, { classId, effectiveFrom }) {
-  return api.post(`/students/${id}/transfers`, { classId, effectiveFrom });
+  return api.post(`/students/${id}/transfers`, {
+    toClassId: classId,
+    effectiveFrom,
+  });
 }
 
-/** POST /students/{id}/transfers/{enrollmentId}/cancel */
 export async function cancelTransfer(id, enrollmentId) {
   return api.post(`/students/${id}/transfers/${enrollmentId}/cancel`);
 }
 
-/** النقل المجدول (لو موجود) من enrollments الطالب */
 export function findScheduledTransfer(student) {
   return (
     (student?.enrollments || []).find((e) => /scheduled|pending/i.test(e.status || "")) || null
   );
 }
-
-/** بيحوّل قيمة id من <select> لرقم لو الـ ids أرقام (وإلا بيسيبها نص) */
 export const toId = (value) => (value !== "" && !Number.isNaN(Number(value)) ? Number(value) : value);

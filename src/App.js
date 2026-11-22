@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import useAccounts from './components/Useaccounts';
+// import useAccounts from './components/Useaccounts';
 import AppLayout from './components/Applayout';
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
@@ -11,12 +11,15 @@ import Students from "./components/Students";
 import ParentLinks from "./components/Parentlinks";
 import NoAccess from "./components/Noaccess";
 import './App.css';
-
+import { AuthProvider } from "./context/AuthContext";
+// import ProtectedRoute from "./components/ProtectedRoute";
 function App() {
   return (
     <AccountsProvider>
       <BrowserRouter>
+       <AuthProvider>
         <Routes>
+          {/* <Route path="/"  /> */}
           <Route path="/login" element={<Login />} />
 
           {/* كل الصفحات اللي جوه الـ Route ده بتاخد الـ Sidebar أوتوماتيك */}
@@ -35,6 +38,7 @@ function App() {
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
+         </AuthProvider>
       </BrowserRouter>
     </AccountsProvider>
   );

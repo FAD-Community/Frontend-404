@@ -9,6 +9,7 @@ import {
   ChevronDownIcon,
 } from "./Icons";
 import { CLASSES } from "../data/Accounts";
+import { listClasses } from "../api/Classes";
 
 const EMPTY_FORM = {
   role: "Teacher",
@@ -23,15 +24,6 @@ const ROLES = [
   { key: "Parent", Icon: UsersIcon, hint: "Needs Parent Management" },
 ];
 
-/**
- * Props:
- *  - initial: بيانات مبدئية (بتستخدم في Resend invitation علشان الفورم يتفتح متعبّي)
- *  - existingUsernames: array لفحص "Username already taken"
- *  - classes: [{id, name}]
- *  - onClose(): قفل النافذة
- *  - onSubmit(data): بيتنادى لما الفورم يكون صحيح
- *  استدعيها بـ {open && <NewAccountModal .../>} علشان الفورم يتصفّر عند كل فتح
- */
 export default function NewAccountModal({
   initial,
   existingUsernames = [],
@@ -72,6 +64,17 @@ export default function NewAccountModal({
     if (taken || !form.fullName.trim() || !username || !form.email.trim()) return;
     onSubmit?.({ ...form, fullName: form.fullName.trim(), username, email: form.email.trim() });
   };
+  const [apiClasses, setApiClasses] = useState([]);
+  const classOptions = classes.length > 0 ? classes : apiClasses;
+
+  useEffect(() => {
+    if (classes.length > 0) return undefined;
+    const controller = new AbortController();
+    listClasses({ signal: controller.signal })
+      .then(setApiClasses)
+      .catch(() => {});
+    return () => controller.abort();
+  }, [classes.length]);
 
   return (
     <div

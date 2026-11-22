@@ -1,36 +1,89 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { XIcon, SearchIcon, CheckIcon } from "./Icons";
 import { getInitials } from "../data/Accounts";
+import { getClassTeacherOptions } from "../api/Classes";
+import { mapTeacherOptionFromApi } from "../data/Classes";
 
-
-export default function AssignTeacherDrawer({ classCard, classes, teachers, onClose, onAssign }) {
+export default function AssignTeacherDrawer({
+  classCard,
+  classes = [],
+  onClose,
+  onAssign,
+}) {
   const uid = useId();
   const [query, setQuery] = useState("");
+  const [teachers, setTeachers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  // الفصل الحالي لكل مدرّس (بالـ id)
-  const classOf = (t) => classes.find((c) => c.teacher?.id === t.id) || null;
+  const currentId = classCard.teacher?.id ?? null;
+  const [selectedId, setSelectedId] = useState(currentId);
+
+  const loadTeachers = useCallback(
+    async (signal) => {
+      setLoading(true);
+      setLoadError("");
+      try {
+        const list = await getClassTeacherOptions({ signal });
+        const mapped = (Array.isArray(list) ? list : []).map(
+          mapTeacherOptionFromApi
+        );
+        setTeachers(mapped);
+
+        if (currentId == null) {
+          const firstFree = mapped.find(
+            (t) =>
+              (!t.classes || t.classes.length === 0) &&
+              !classes.some((c) => c.teacher?.id === t.id)
+          );
+          setSelectedId(firstFree?.id ?? null);
+        }
+      } catch (err) {
+        if (err?.name === "AbortError") return;
+        setLoadError(err.message || "Failed to load teachers.");
+        setTeachers([]);
+      } finally {
+        if (!signal?.aborted) {
+          setLoading(false);
+        }
+      }
+    },
+    [currentId, classes]
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadTeachers(controller.signal);
+    return () => controller.abort();
+  }, [loadTeachers]);
+
+  const classOf = (t) => {
+    if (Array.isArray(t.classes) && t.classes.length > 0) {
+      return t.classes[0];
+    }
+    return classes.find((c) => c.teacher?.id === t.id) || null;
+  };
 
   const free = teachers.filter((t) => !classOf(t));
   const assigned = teachers.filter((t) => classOf(t));
-
-  // مدرّس الفصل الحالي (بالـ id، أو بالاسم لو البيانات قديمة من غير id)
-  const currentId = classCard.teacher
-    ? classCard.teacher.id ?? teachers.find((t) => t.name === classCard.teacher.name)?.id ?? null
-    : null;
-
-  // الاختيار المبدئي: مدرّس الفصل الحالي (Change) أو أول مدرّس من غير فصل (Assign)
-  const [selectedId, setSelectedId] = useState(currentId ?? free[0]?.id ?? null);
 
   const selected = teachers.find((t) => t.id === selectedId) || null;
   const unchanged = !!selected && currentId === selected.id;
 
   const q = query.trim().toLowerCase();
-  const matches = (t) => !q || t.name.toLowerCase().includes(q) || t.username.toLowerCase().includes(q);
+  const matches = (t) =>
+    !q ||
+    t.name.toLowerCase().includes(q) ||
+    t.username.toLowerCase().includes(q);
   const freeShown = free.filter(matches);
   const assignedShown = assigned.filter(matches);
 
   useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && onClose?.();
+    const onKey = (e) => {
+      if (e.key === "Escape" && !saving) onClose?.();
+    };
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -38,18 +91,26 @@ export default function AssignTeacherDrawer({ classCard, classes, teachers, onCl
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [onClose]);
+  }, [onClose, saving]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!selected || unchanged) return;
-    onAssign?.(classCard.id, selected);
+    if (!selected || unchanged || saving) return;
+
+    setSaving(true);
+    setSubmitError("");
+    try {
+      await onAssign?.(classCard.id, selected);
+    } catch (err) {
+      setSubmitError(err.message || "Failed to assign teacher.");
+      setSaving(false);
+    }
   };
 
   const renderRow = (t) => {
     const cls = classOf(t);
     const isSelected = t.id === selectedId;
-    const leaving = cls && cls.id !== classCard.id; // هيسيب فصله الحالي لو اتعيّن هنا
+    const leaving = cls && cls.id !== classCard.id;
 
     return (
       <button
@@ -58,9 +119,15 @@ export default function AssignTeacherDrawer({ classCard, classes, teachers, onCl
         role="radio"
         aria-checked={isSelected}
         className={`ap-row${isSelected ? " ap-row--on" : ""}`}
-        onClick={() => setSelectedId(t.id)}
+        onClick={() => {
+          setSelectedId(t.id);
+          if (submitError) setSubmitError("");
+        }}
+        disabled={saving}
       >
-        <span className={`avatar avatar--${t.avatar} ap-avatar`}>{getInitials(t.name)}</span>
+        <span className={`avatar avatar--${t.avatar} ap-avatar`}>
+          {getInitials(t.name)}
+        </span>
 
         <span className="ap-row__text">
           <strong>{t.name}</strong>
@@ -81,7 +148,9 @@ export default function AssignTeacherDrawer({ classCard, classes, teachers, onCl
   return (
     <div
       className="drawer-overlay"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}
+      onMouseDown={(e) =>
+        e.target === e.currentTarget && !saving && onClose?.()
+      }
     >
       <form
         className="drawer ap"
@@ -91,19 +160,32 @@ export default function AssignTeacherDrawer({ classCard, classes, teachers, onCl
         onSubmit={handleSubmit}
         noValidate
       >
-        {/* ===== Header ===== */}
         <header className="ap-head">
           <h2 className="na-title" id={`${uid}-title`}>
-            {classCard.teacher ? "Change teacher" : "Assign teacher"} · {classCard.name}
+            {classCard.teacher ? "Change teacher" : "Assign teacher"} ·{" "}
+            {classCard.name}
           </h2>
-          <p className="na-sub">Changing the teacher keeps all existing records (FR-18).</p>
-          <button type="button" className="na-close drawer__close" onClick={onClose} aria-label="Close">
+          <p className="na-sub">
+            Changing the teacher keeps all existing records (FR-18).
+          </p>
+          <button
+            type="button"
+            className="na-close drawer__close"
+            onClick={onClose}
+            disabled={saving}
+            aria-label="Close"
+          >
             <XIcon size={14} />
           </button>
         </header>
 
-        {/* ===== Body ===== */}
         <div className="drawer__body ap-body">
+          {submitError && (
+            <div className="drawer-alert" role="alert">
+              <p>{submitError}</p>
+            </div>
+          )}
+
           <label className="ap-search">
             <SearchIcon size={14} />
             <input
@@ -113,37 +195,65 @@ export default function AssignTeacherDrawer({ classCard, classes, teachers, onCl
               onChange={(e) => setQuery(e.target.value)}
               autoComplete="off"
               aria-label="Search teachers"
+              disabled={loading || saving}
             />
           </label>
 
-          <div role="radiogroup" aria-label="Teachers">
-            {freeShown.length > 0 && (
-              <>
-                <p className="ap-label">Without a class</p>
-                <div className="ap-list">{freeShown.map(renderRow)}</div>
-              </>
-            )}
+          {loading ? (
+            <p className="ap-empty">Loading teachers...</p>
+          ) : loadError ? (
+            <div className="drawer-alert" role="alert">
+              <p>{loadError}</p>
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={() => loadTeachers()}
+              >
+                Try again
+              </button>
+            </div>
+          ) : (
+            <div role="radiogroup" aria-label="Teachers">
+              {freeShown.length > 0 && (
+                <>
+                  <p className="ap-label">Without a class</p>
+                  <div className="ap-list">{freeShown.map(renderRow)}</div>
+                </>
+              )}
 
-            {assignedShown.length > 0 && (
-              <>
-                <p className="ap-label">Currently assigned</p>
-                <div className="ap-list">{assignedShown.map(renderRow)}</div>
-              </>
-            )}
+              {assignedShown.length > 0 && (
+                <>
+                  <p className="ap-label">Currently assigned</p>
+                  <div className="ap-list">{assignedShown.map(renderRow)}</div>
+                </>
+              )}
 
-            {freeShown.length === 0 && assignedShown.length === 0 && (
-              <p className="ap-empty">No teachers found.</p>
-            )}
-          </div>
+              {freeShown.length === 0 && assignedShown.length === 0 && (
+                <p className="ap-empty">No teachers found.</p>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* ===== Footer ===== */}
         <footer className="drawer__foot">
-          <button type="button" className="btn-outline drawer__btn" onClick={onClose}>
+          <button
+            type="button"
+            className="btn-outline drawer__btn"
+            onClick={onClose}
+            disabled={saving}
+          >
             Cancel
           </button>
-          <button type="submit" className="btn-primary drawer__btn" disabled={!selected || unchanged}>
-            {selected ? `Assign ${selected.name.split(" ")[0]}` : "Assign"}
+          <button
+            type="submit"
+            className="btn-primary drawer__btn"
+            disabled={loading || !selected || unchanged || saving}
+          >
+            {saving
+              ? "Assigning..."
+              : selected
+              ? `Assign ${selected.name.split(" ")[0]}`
+              : "Assign"}
           </button>
         </footer>
       </form>

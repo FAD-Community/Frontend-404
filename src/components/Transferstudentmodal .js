@@ -21,15 +21,6 @@ const todayIso = () => {
 
 const labelOf = (c) => (c ? `${c.name}${c.level ? ` · ${c.level}` : ""}` : "");
 
-/**
- * Props:
- *  - student: الطالب اللي هيتنقل (شكل الـ UI: id, name, code, classId, className)
- *  - classes: [{id, name, level, teacherName?}] من الـ API
- *  - onClose()
- *  - onSubmit({classId, effectiveFrom}): async — لو رمى خطأ بيتعرض جوه النافذة
- *  - onScheduleChanged(): بيتنادى بعد إلغاء نقل مجدول (علشان الصفحة تعمل refresh)
- *  استدعيه بـ {student && <TransferStudentModal key={student.id} .../>}
- */
 export default function TransferStudentModal({ student, classes = [], onClose, onSubmit, onScheduleChanged }) {
   const uid = useId();
 
@@ -87,7 +78,7 @@ export default function TransferStudentModal({ student, classes = [], onClose, o
     setCancelling(true);
     setError("");
     try {
-      await cancelTransfer(student.id, scheduled.id);
+      // await cancelTransfer(student.id, scheduled.id);
       setScheduled(null);
       onScheduleChanged?.();
     } catch (err) {
