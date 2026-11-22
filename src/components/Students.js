@@ -5,7 +5,7 @@ import TransferStudentModal from "../components/Transferstudentmodal ";
 import { PlusIcon, KebabIcon, ChevronLeftIcon, ChevronRightIcon } from "../components/Icons";
 import { listStudents, createStudent, transferStudent } from "../api/students";
 import { listClasses } from "../api/Classes";
-
+import { useLocation } from "react-router-dom";
 const PAGE_SIZE = 8;
 
 const initialsOf = (name = "") =>
@@ -16,31 +16,23 @@ const initialsOf = (name = "") =>
     .join("")
     .slice(0, 2)
     .toUpperCase();
-
-/**
- * صفحة الطلاب (متوصّلة بالـ API).
- *  - GET  /students?page&pageSize&classId   قايمة الطلاب (مع Pagination وفلتر الفصل)
- *  - POST /students                         Add student
- *  - POST /students/{id}/transfers          Transfer student (النقط الثلاثة)
- *  - GET  /classes                          تابات الفصول (افتراضي – راجع api/classes.js)
- */
 export default function Students({ onStudentMenu }) {
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [classFilter, setClassFilter] = useState("all"); // "all" أو id الفصل
-  const [apiClasses, setApiClasses] = useState([]);
-  const [seenClasses, setSeenClasses] = useState([]); // فصول مستنتجة من الطلاب (احتياطي لو /classes مش شغال)
+const location = useLocation();
+  const [classFilter, setClassFilter] = useState(
+    () => location.state?.classId ?? "all"
+  );  const [apiClasses, setApiClasses] = useState([]);
+  const [seenClasses, setSeenClasses] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
-
   const [addOpen, setAddOpen] = useState(false);
-  const [transferTarget, setTransferTarget] = useState(null); // الطالب اللي بيتنقل
+  const [transferTarget, setTransferTarget] = useState(null); 
 
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
-  /* ----- الفصول (التابات + اختيارات الفصل في النماذج) — بتتحمل تاني مع Retry ----- */
   useEffect(() => {
     const controller = new AbortController();
     listClasses({ signal: controller.signal })
@@ -57,8 +49,7 @@ export default function Students({ onStudentMenu }) {
     return [...map.values()];
   }, [apiClasses, seenClasses]);
 
-  /* ----- الطلاب ----- */
-  useEffect(() => {
+ useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
@@ -72,7 +63,7 @@ export default function Students({ onStudentMenu }) {
       .then((res) => {
         setRows(res.items);
         setTotal(res.total);
-        // لو الصفحة الحالية بقت فاضية (مثلاً بعد نقل آخر طالب فيها) نرجع صفحة
+        console.log(res.items , res.total)
         if (res.items.length === 0 && page > 1) setPage((p) => p - 1);
         setSeenClasses((prev) => {
           const known = new Set(prev.map((c) => String(c.id)));
@@ -89,7 +80,6 @@ export default function Students({ onStudentMenu }) {
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
-
     return () => controller.abort();
   }, [page, classFilter, reloadKey]);
 
@@ -100,20 +90,20 @@ export default function Students({ onStudentMenu }) {
   };
 
   const addStudent = async (body) => {
-    await createStudent(body); // لو فيه خطأ بيتعرض جوه الدرج
+    await createStudent(body); 
     setAddOpen(false);
     setClassFilter("all");
     setPage(1);
     reload();
   };
 
-  const doTransfer = async (student, { classId, effectiveFrom }) => {
-    await transferStudent(student.id, { classId, effectiveFrom });
-    setTransferTarget(null);
-    reload();
-  };
+const doTransfer = async (student, data) => {
+  await transferStudent(student.id, data);
 
-  /* ----- Pagination ----- */
+  reload();
+  setTransferTarget(null);
+};
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const to = from === 0 ? 0 : from + rows.length - 1;
@@ -249,7 +239,6 @@ export default function Students({ onStudentMenu }) {
             </table>
           </div>
 
-          {/* ===== Footer / Pagination (بيظهر بس لو فيه أكتر من صفحة) ===== */}
           {total > PAGE_SIZE && (
             <div className="acc-footer">
               <span>
@@ -292,7 +281,6 @@ export default function Students({ onStudentMenu }) {
         </section>
       </div>
 
-      {/* ===== Transfer student ===== */}
       {transferTarget && (
         <TransferStudentModal
           key={transferTarget.id}
@@ -304,7 +292,6 @@ export default function Students({ onStudentMenu }) {
         />
       )}
 
-      {/* ===== Add student ===== */}
       {addOpen && (
         <AddStudentDrawer
           classes={classes}

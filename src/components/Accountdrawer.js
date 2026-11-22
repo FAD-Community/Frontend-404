@@ -1,5 +1,6 @@
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { RoleTag, StatusBadge } from "./AccountBadges";
+import { getAccountInvitations } from "../api/accounts.api";
 import {
   XIcon,
   ClockIcon,
@@ -15,33 +16,29 @@ import {
   fmtDate,
   fmtDateTime,
   getInitials,
-  lastEvent,
 } from "../data/Accounts";
 
-// شكل كل نوع حدث في "Invitation history"
+const byName = (e) => e.by?.fullName || e.by || "System";
+
 const EVENT_VIEW = {
-  created:     { Icon: UserIcon,   tone: "slate", title: (e) => `Record created by ${e.by}` },
-  sent:        { Icon: SendIcon,   tone: "cyan",  title: (e) => `Invitation ${e.resent ? "resent" : "sent"} by ${e.by}` },
-  expired:     { Icon: ClockIcon,  tone: "slate", title: () => "Expired" },
+  created:     { Icon: UserIcon,   tone: "slate", title: (e) => `Record created by ${byName(e)}` },
+  sent:        { Icon: SendIcon,   tone: "cyan",  title: (e) => `Invitation sent to ${e.to || "email"} by ${byName(e)}` },
+  used:        { Icon: CheckIcon,  tone: "green", title: () => "Account activated" },
   activated:   { Icon: CheckIcon,  tone: "green", title: () => "Account activated" },
-  edited:      { Icon: PencilIcon, tone: "slate", title: (e) => `Details updated by ${e.by}` },
-  privileges:  { Icon: PencilIcon, tone: "slate", title: (e) => `Privileges updated by ${e.by}` },
-  deactivated: { Icon: XIcon,      tone: "slate", title: (e) => `Account deactivated by ${e.by}` },
-  reactivated: { Icon: CheckIcon,  tone: "green", title: (e) => `Account reactivated by ${e.by}` },
+  expired:     { Icon: ClockIcon,  tone: "slate", title: () => "Expired" },
+  revoked:     { Icon: XIcon,      tone: "slate", title: () => "Previous link revoked" },
+  edited:      { Icon: PencilIcon, tone: "slate", title: (e) => `Details updated by ${byName(e)}` },
+  privileges:  { Icon: PencilIcon, tone: "slate", title: (e) => `Privileges updated by ${byName(e)}` },
+  deactivated: { Icon: XIcon,      tone: "slate", title: (e) => `Account deactivated by ${byName(e)}` },
+  reactivated: { Icon: CheckIcon,  tone: "green", title: (e) => `Account reactivated by ${byName(e)}` },
 };
 
-const isInviteStatus = (s) => s === "Invited" || s === "Invite expired";
+const isInviteStatus = (s) =>
+  s === "Invited" || s === "Invite expired" || s === "InviteExpired";
 
-/**
- * Props:
- *  - account: الحساب المعروض
- *  - existingUsernames: أسماء المستخدمين التانية (لفحص التكرار وقت التعديل)
- *  - onClose(), onResend(account), onSave(id, {name, username, email})
- *  - onDeactivate(account): بيفتح نافذة التأكيد  |  onSetActive(id, true): إعادة التفعيل
- */
 export default function AccountDrawer({
   account,
-  existingUsernames = [],
+  initialEditing = false,
   onClose,
   onResend,
   onSave,
@@ -49,75 +46,163 @@ export default function AccountDrawer({
   onSetActive,
 }) {
   const uid = useId();
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(
+    () => Boolean(initialEditing) && isInviteStatus(account.status)
+  );
   const [submitted, setSubmitted] = useState(false);
-  const [form, setForm] = useState({
-    name: account.name,
-    username: account.username,
-    email: account.email,
-  });
+  const [busyAction, setBusyAction] = useState(""); // "edit" | "resend" | "reactivate" | ""
+  const [fieldError, setFieldError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [emailInput, setEmailInput] = useState(account.email || "");
 
-  const firstName = account.name.trim().split(" ")[0];
-  const events = [...account.history].reverse();
+  const [events, setEvents] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState("");
+
+  const firstName = (account.name || "").trim().split(" ")[0];
   const inviteFlow = isInviteStatus(account.status);
 
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const data = await getAccountInvitations(account.id);
+      setEvents(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setHistoryError(err.message || "Failed to load invitation history.");
+      setEvents([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [account.id]);
+
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory, account.email, account.status, account.invitation?.sentAt]);
+
   /* ----- alert (أصفر لو منتهية / أزرق لو لسه شغالة) ----- */
+  const latestSent =
+    account.invitation ||
+    events.find((e) => (e.kind || e.type || "").toLowerCase() === "sent");
+  const latestExpired = events.find(
+    (e) => (e.kind || e.type || "").toLowerCase() === "expired"
+  );
+
+  const sentAt = latestSent?.sentAt || latestSent?.at;
+  const expiresAt =
+    latestSent?.expiresAt ||
+    latestExpired?.at ||
+    (sentAt
+      ? new Date(new Date(sentAt).getTime() + INVITE_TTL_MS).toISOString()
+      : null);
+
   let alertBox = null;
-  const sent = lastEvent(account, "sent");
-  if (account.status === "Invite expired" && sent) {
-    const expired = lastEvent(account, "expired");
+  if (
+    (account.status === "Invite expired" || account.status === "InviteExpired") &&
+    sentAt
+  ) {
     alertBox = (
       <div className="drawer-alert" role="status">
         <ClockIcon size={13} />
         <p>
-          The invitation sent on <strong>{fmtDate(sent.at)}</strong> expired on{" "}
-          <strong>{fmtDate(expired ? expired.at : new Date(new Date(sent.at).getTime() + INVITE_TTL_MS))}</strong>.{" "}
-          {firstName} can’t log in until she activates a new invitation.
+          The invitation sent on <strong>{fmtDate(sentAt)}</strong> expired on{" "}
+          <strong>{fmtDate(expiresAt)}</strong>. {firstName} can’t log in until
+          activating a new invitation.
         </p>
       </div>
     );
-  } else if (account.status === "Invited" && sent) {
+  } else if (account.status === "Invited" && sentAt) {
     alertBox = (
       <div className="drawer-alert drawer-alert--info" role="status">
         <SendIcon size={13} />
         <p>
-          The invitation was sent on <strong>{fmtDate(sent.at)}</strong> and expires on{" "}
-          <strong>{fmtDate(new Date(new Date(sent.at).getTime() + INVITE_TTL_MS))}</strong>.{" "}
-          {firstName} hasn’t activated the account yet.
+          The invitation was sent on <strong>{fmtDate(sentAt)}</strong> and
+          expires on <strong>{fmtDate(expiresAt)}</strong>. {firstName} hasn’t
+          activated the account yet.
         </p>
       </div>
     );
   }
 
-  /* ----- edit validation ----- */
-  const username = form.username.trim();
-  const taken = existingUsernames.some((u) => u.toLowerCase() === username.toLowerCase());
-  const bad = {
-    name: submitted && !form.name.trim(),
-    username: submitted && !username,
-    email: submitted && !/^\S+@\S+\.\S+$/.test(form.email.trim()),
-  };
+  /* ----- Edit email (PUT /accounts/{id}/email) ----- */
+  const trimmedEmail = emailInput.trim();
+  const badEmail = submitted && !/^\S+@\S+\.\S+$/.test(trimmedEmail);
 
   const startEdit = () => {
-    setForm({ name: account.name, username: account.username, email: account.email });
+    setEmailInput(account.email || "");
     setSubmitted(false);
+    setFieldError("");
+    setActionError("");
     setEditing(true);
   };
 
-  const cancelEdit = () => setEditing(false);
+  const cancelEdit = () => {
+    if (busyAction) return;
+    setFieldError("");
+    setEditing(false);
+  };
 
-  const save = (e) => {
+  const saveEmail = async (e) => {
     e?.preventDefault();
     setSubmitted(true);
-    if (taken || !form.name.trim() || !username || !/^\S+@\S+\.\S+$/.test(form.email.trim())) return;
-    onSave(account.id, { name: form.name.trim(), username, email: form.email.trim() });
-    setEditing(false);
+    setFieldError("");
+    setActionError("");
+
+    if (!/^\S+@\S+\.\S+$/.test(trimmedEmail)) return;
+
+    setBusyAction("edit");
+    try {
+      await onSave(account.id, trimmedEmail);
+      setEditing(false);
+      await loadHistory();
+    } catch (err) {
+      if (err?.invitationSaved) {
+        setEditing(false);
+        setActionError(err.message);
+        await loadHistory();
+      } else {
+        setFieldError(err.message || "Failed to update email.");
+      }
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  /* ----- Resend invitation (POST /accounts/{id}/invitation/resend) ----- */
+  const handleResendClick = async () => {
+    setBusyAction("resend");
+    setActionError("");
+    try {
+      await onResend(account);
+      await loadHistory();
+    } catch (err) {
+      setActionError(err.message || "Failed to resend invitation.");
+      if (err?.invitationSaved) {
+        await loadHistory();
+      }
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  /* ----- Reactivate (POST /accounts/{id}/reactivate) ----- */
+  const handleReactivateClick = async () => {
+    setBusyAction("reactivate");
+    setActionError("");
+    try {
+      await onSetActive(account.id, true);
+      await loadHistory();
+    } catch (err) {
+      setActionError(err.message || "Failed to reactivate account.");
+    } finally {
+      setBusyAction("");
+    }
   };
 
   /* Esc: يلغي التعديل أولاً، وبعدين يقفل الدراور + منع سكرول الخلفية */
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || busyAction) return;
       if (editing) setEditing(false);
       else onClose?.();
     };
@@ -128,14 +213,14 @@ export default function AccountDrawer({
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [editing, onClose]);
-
-  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  }, [editing, busyAction, onClose]);
 
   return (
     <div
       className="drawer-overlay"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}
+      onMouseDown={(e) =>
+        e.target === e.currentTarget && !busyAction && onClose?.()
+      }
     >
       <aside
         className="drawer"
@@ -145,12 +230,13 @@ export default function AccountDrawer({
       >
         {/* ===== Header ===== */}
         <header className="drawer__head">
-          <span className={`avatar avatar--lg avatar--${account.avatar}`}>
+          <span className={`avatar avatar--${account.avatar}`}>
             {getInitials(account.name)}
           </span>
-
           <div className="drawer__who">
-            <h2 className="drawer__name" id={`${uid}-title`}>{account.name}</h2>
+            <h2 className="drawer__name" id={`${uid}-title`}>
+              {account.name}
+            </h2>
             <p className="drawer__handle">
               @{account.username} · {account.email}
             </p>
@@ -160,89 +246,106 @@ export default function AccountDrawer({
             </div>
           </div>
 
-          <button type="button" className="na-close drawer__close" onClick={onClose} aria-label="Close">
+          <button
+            type="button"
+            className="na-close drawer__close"
+            onClick={onClose}
+            disabled={Boolean(busyAction)}
+            aria-label="Close"
+          >
             <XIcon size={14} />
           </button>
         </header>
 
         {/* ===== Body ===== */}
         {editing ? (
-          <form className="drawer__body" onSubmit={save} noValidate id={`${uid}-form`}>
-            <h3 className="drawer__section">Edit details</h3>
+          <form
+            className="drawer__body"
+            onSubmit={saveEmail}
+            noValidate
+            id={`${uid}-form`}
+          >
+            <h3 className="drawer__section">Edit email</h3>
 
             <div className="na-field">
-              <label className="na-label" htmlFor={`${uid}-name`}>Full name</label>
-              <input
-                id={`${uid}-name`}
-                className={`na-input${bad.name ? " is-invalid" : ""}`}
-                value={form.name}
-                onChange={set("name")}
-                autoComplete="off"
-                autoFocus
-              />
-            </div>
-
-            <div className="na-field">
-              <label className="na-label" htmlFor={`${uid}-user`}>Username</label>
-              <input
-                id={`${uid}-user`}
-                className={`na-input${taken || bad.username ? " is-invalid" : ""}`}
-                value={form.username}
-                onChange={set("username")}
-                aria-invalid={taken}
-                autoComplete="off"
-              />
-              {taken && (
-                <p className="na-error" role="alert">
-                  <AlertTriangleIcon size={11} /> Username already taken
-                </p>
-              )}
-            </div>
-
-            <div className="na-field">
-              <label className="na-label" htmlFor={`${uid}-email`}>Email</label>
+              <label className="na-label" htmlFor={`${uid}-email`}>
+                Email
+              </label>
               <input
                 id={`${uid}-email`}
                 type="email"
-                className={`na-input${bad.email ? " is-invalid" : ""}`}
-                value={form.email}
-                onChange={set("email")}
+                className={`na-input${
+                  badEmail || fieldError ? " is-invalid" : ""
+                }`}
+                value={emailInput}
+                onChange={(e) => {
+                  setEmailInput(e.target.value);
+                  if (fieldError) setFieldError("");
+                }}
                 autoComplete="off"
+                autoFocus
+                disabled={busyAction === "edit"}
               />
-              {bad.email && (
+              {(badEmail || fieldError) && (
                 <p className="na-error" role="alert">
-                  <AlertTriangleIcon size={11} /> Enter a valid email address
+                  <AlertTriangleIcon size={11} />{" "}
+                  {fieldError || "Enter a valid email address"}
                 </p>
               )}
             </div>
+
+            <p className="drawer__note">
+              Saving a new email sends a fresh invitation link and invalidates
+              all older links.
+            </p>
           </form>
         ) : (
           <div className="drawer__body">
+            {actionError && (
+              <div className="drawer-alert" role="alert">
+                <AlertTriangleIcon size={13} />
+                <p>{actionError}</p>
+              </div>
+            )}
+
             {alertBox}
 
             <h3 className="drawer__section">Invitation history</h3>
 
-            <ol className="drawer-events">
-              {events.map((e, i) => {
-                const view = EVENT_VIEW[e.type] || EVENT_VIEW.created;
-                const { Icon } = view;
-                return (
-                  <li className="drawer-event" key={`${e.type}-${e.at}-${i}`}>
-                    <span className={`icon-box icon-box--${view.tone}`}>
-                      <Icon size={13} />
-                    </span>
-                    <div className="drawer-event__text">
-                      <p className="drawer-event__title">{view.title(e)}</p>
-                      <p className="drawer-event__time">{fmtDateTime(e.at)}</p>
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
+            {historyLoading ? (
+              <p className="drawer__note">Loading invitation history...</p>
+            ) : historyError ? (
+              <div className="drawer-alert" role="alert">
+                <AlertTriangleIcon size={13} />
+                <p>{historyError}</p>
+              </div>
+            ) : events.length === 0 ? (
+              <p className="drawer__note">No invitation events found.</p>
+            ) : (
+              <ol className="drawer-events">
+                {events.map((e, i) => {
+                  const key = (e.kind || e.type || "created").toLowerCase();
+                  const view = EVENT_VIEW[key] || EVENT_VIEW.created;
+                  const { Icon } = view;
+                  return (
+                    <li className="drawer-event" key={`${key}-${e.at}-${i}`}>
+                      <span className={`icon-box icon-box--${view.tone}`}>
+                        <Icon size={13} />
+                      </span>
+                      <div className="drawer-event__text">
+                        <p className="drawer-event__title">{view.title(e)}</p>
+                        <p className="drawer-event__time">{fmtDateTime(e.at)}</p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
 
             {inviteFlow && (
               <p className="drawer__note">
-                Resending invalidates any older link (only the newest link works).
+                Resending invalidates any older link (only the newest link
+                works).
               </p>
             )}
           </div>
@@ -252,41 +355,73 @@ export default function AccountDrawer({
         <footer className="drawer__foot">
           {editing ? (
             <>
-              <button type="button" className="btn-outline drawer__btn" onClick={cancelEdit}>
+              <button
+                type="button"
+                className="btn-outline drawer__btn"
+                onClick={cancelEdit}
+                disabled={busyAction === "edit"}
+              >
                 Cancel
               </button>
-              <button type="submit" form={`${uid}-form`} className="btn-primary drawer__btn">
+              <button
+                type="submit"
+                form={`${uid}-form`}
+                className="btn-primary drawer__btn"
+                disabled={busyAction === "edit"}
+              >
                 <CheckIcon size={12} />
-                Save changes
+                {busyAction === "edit" ? "Saving..." : "Save changes"}
               </button>
             </>
           ) : (
             <>
-              <button type="button" className="btn-outline drawer__btn" onClick={startEdit}>
-                Edit email
-              </button>
-
               {inviteFlow && (
-                <button type="button" className="btn-primary drawer__btn" onClick={() => onResend(account)}>
-                  <RefreshIcon size={12} />
-                  Resend invitation
+                <button
+                  type="button"
+                  className="btn-outline drawer__btn"
+                  onClick={startEdit}
+                  disabled={Boolean(busyAction)}
+                >
+                  Edit email
                 </button>
               )}
 
-              {account.status === "Active" && (
+              {inviteFlow && (
+                <button
+                  type="button"
+                  className="btn-primary drawer__btn"
+                  onClick={handleResendClick}
+                  disabled={Boolean(busyAction)}
+                >
+                  <RefreshIcon size={12} />
+                  {busyAction === "resend"
+                    ? "Sending..."
+                    : "Resend invitation"}
+                </button>
+              )}
+
+              {account.status === "Active" && !account.locked && (
                 <button
                   type="button"
                   className="btn-outline btn-outline--danger drawer__btn"
                   onClick={() => onDeactivate(account)}
+                  disabled={Boolean(busyAction)}
                 >
                   Deactivate
                 </button>
               )}
 
               {account.status === "Inactive" && (
-                <button type="button" className="btn-primary drawer__btn" onClick={() => onSetActive(account.id, true)}>
+                <button
+                  type="button"
+                  className="btn-primary drawer__btn"
+                  onClick={handleReactivateClick}
+                  disabled={Boolean(busyAction)}
+                >
                   <CheckIcon size={12} />
-                  Reactivate
+                  {busyAction === "reactivate"
+                    ? "Reactivating..."
+                    : "Reactivate"}
                 </button>
               )}
             </>

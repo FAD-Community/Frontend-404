@@ -1,7 +1,6 @@
 import { useState } from "react";
-
-
-/* ---------------- Icons ---------------- */
+import { useAuth } from "../context/AuthContext";
+import { useNavigate } from "react-router-dom";
 const UserIcon = () => (
   <svg className="login-input-icon" viewBox="0 0 24 24" fill="none"
     stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -35,7 +34,6 @@ const AlertIcon = () => (
   </svg>
 );
 
-/* ---------------- Logo (Kidoo) ---------------- */
 const KidooLogo = () => (
   <div className="login-logo" aria-label="Kidoo">
     {/* smiley mark */}
@@ -55,21 +53,73 @@ const KidooLogo = () => (
   </div>
 );
 
-/* ---------------- Page ---------------- */
 export default function Login() {
-  const [username, setUsername] = useState("Ahlam Mahmoud");
-  const [password, setPassword] = useState("••••••••••");
+  const navigate = useNavigate();
+  const { login } = useAuth();
+
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  // الرسالة اللي في الصورة. خليها null لو عاوزها تظهر بس بعد فشل تسجيل الدخول
-  const [error, setError] = useState(
-    "This account is inactive. Contact the nursery owner. (FR-04)"
-  );
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+
+    const handleSubmit = async (e) => {
     e.preventDefault();
-    // TODO: اربط هنا الـ API بتاع تسجيل الدخول
-    // setError(null) عند النجاح  |  setError("رسالة الخطأ") عند الفشل
+
+    setError("");
+
+    // Validate inputs
+    if (!username.trim() || !password) {
+      setError("Please enter your username and password.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      console.log("[Login] Sending login request...");
+
+      // Call AuthContext -> loginApi -> apiClient
+      const user = await login({
+        login: username.trim(),
+        password,
+      });
+
+      console.log("[Login] Successful:", {
+        id: user.id,
+        fullName: user.fullName,
+        role: user.role,
+      });
+
+      // Redirect after successful login
+      navigate("/dashboard", { replace: true });
+
+    } catch (err) {
+      console.error("[Login] Failed:", {
+        message: err.message,
+        status: err.status,
+        code: err.code,
+      });
+
+      if (err.status === 400) {
+        setError("Please check the entered login information.");
+      } else if (err.status === 401) {
+        setError("Invalid username or password.");
+      } else if (err.status === 403) {
+        setError("Your account does not have permission to log in.");
+      } else if (err.status === 429) {
+        setError("Too many login attempts. Please try again later.");
+      } else if (err.status >= 500) {
+        setError("Server error. Please try again later.");
+      } else {
+        setError(err.message || "Unable to connect to the server.");
+      }
+
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

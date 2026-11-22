@@ -3,7 +3,7 @@ import { LockIcon, SendIcon, ClockIcon } from "./Icons";
 export const ROLE_TONE = { Admin: "cyan", Teacher: "blue", Parent: "amber" };
 
 export function RoleTag({ role }) {
-  return <span className={`tag tag--${ROLE_TONE[role]}`}>{role}</span>;
+  return <span className={`tag tag--${ROLE_TONE[role] || "slate"}`}>{role}</span>;
 }
 
 export function StatusBadge({ status }) {
@@ -23,6 +23,7 @@ export function StatusBadge({ status }) {
         </span>
       );
     case "Invite expired":
+    case "InviteExpired":
       return (
         <span className="tag tag--amber tag--icon">
           <ClockIcon size={9} /> Invite expired
