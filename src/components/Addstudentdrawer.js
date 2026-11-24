@@ -299,7 +299,7 @@ export default function AddStudentDrawer({ classes = [], onClose, onSubmit }) {
                 ) : (
                   suggestions.map((p) => (
                     <li key={p.id}>
-                      <button type="button" role="option" onClick={() => addParent(p)}>
+                      <button type="button"  onClick={() => addParent(p)}>
                         {p.name}
                       </button>
                     </li>

@@ -62,8 +62,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
 
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
+const [loading, setLoading] = useState(false);
 
     const handleSubmit = async (e) => {
     e.preventDefault();
@@ -196,7 +195,9 @@ export default function Login() {
           <button type="submit" className="login-btn">
             Log in
           </button>
-
+<button disabled={loading}>
+  {loading ? " Log in ..." :  "Log in"}
+</button>
           {error && (
             <div className="login-error" role="alert">
               <AlertIcon />
