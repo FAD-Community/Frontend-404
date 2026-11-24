@@ -65,7 +65,7 @@ export default function NewAccountModal({
     onSubmit?.({ ...form, fullName: form.fullName.trim(), username, email: form.email.trim() });
   };
   const [apiClasses, setApiClasses] = useState([]);
-  // const classOptions = classes.length > 0 ? classes : apiClasses;
+  const classOptions = classes.length > 0 ? classes : apiClasses;
 
   useEffect(() => {
     if (classes.length > 0) return undefined;
@@ -201,7 +201,7 @@ export default function NewAccountModal({
                   className={form.classId ? "has-value" : ""}
                 >
                   <option value="">Select a class</option>
-                  {classes.map((c) => (
+                  {classOptions.map((c) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
