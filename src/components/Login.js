@@ -192,11 +192,11 @@ const [loading, setLoading] = useState(false);
             </div>
           </div>
 
-          <button type="submit" className="login-btn">
+          {/* <button type="submit" className="login-btn">
             Log in
-          </button>
-<button disabled={loading}>
-  {loading ? " Log in ..." :  "Log in"}
+          </button> */}
+<button disabled={loading} type="submit" className="login-btn">
+  {loading ? " loading..." :  "Log in"}
 </button>
           {error && (
             <div className="login-error" role="alert">
