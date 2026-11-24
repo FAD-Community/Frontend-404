@@ -65,7 +65,7 @@ export default function NewAccountModal({
     onSubmit?.({ ...form, fullName: form.fullName.trim(), username, email: form.email.trim() });
   };
   const [apiClasses, setApiClasses] = useState([]);
-  const classOptions = classes.length > 0 ? classes : apiClasses;
+  // const classOptions = classes.length > 0 ? classes : apiClasses;
 
   useEffect(() => {
     if (classes.length > 0) return undefined;

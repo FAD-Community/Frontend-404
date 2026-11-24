@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import { getStudent, cancelTransfer, findScheduledTransfer, toId } from "../api/students";
+import { getStudent, findScheduledTransfer, toId } from "../api/students";
 import { XIcon, CalendarIcon, ChevronDownIcon, HistoryIcon, SwapIcon, AlertTriangleIcon } from "./Icons";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
