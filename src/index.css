@@ -4181,6 +4181,63 @@ input {
   padding: 8.5px 14px 8.5px 12px;
   border-radius: 12px;
 }
+
+.pl-state {
+  margin: 0;
+  padding: 16px;
+  color: var(--kd-muted);
+  font-size: 10px;
+}
+
+.pl-state--error,
+.pl-error {
+  color: var(--kd-danger);
+}
+
+.pl-state--error p {
+  margin: 0 0 8px;
+}
+
+.pl-state--error button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--kd-teal-btn);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pl-error {
+  margin: 9px 0 0;
+  font-size: 10px;
+}
+
+.pl-link-btn:disabled,
+.pl-remove:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pl-child__meta {
+  max-width: 180px;
+  white-space: normal;
+  text-align: right;
+}
+
+@media (max-width: 680px) {
+  .pl-child {
+    flex-wrap: wrap;
+    padding: 8px;
+  }
+
+  .pl-child__meta {
+    flex: 1 1 100%;
+    max-width: none;
+    text-align: left;
+  }
+}
+
 /* =========================================================
    20) Link a child modal (.lc-*)
    ========================================================= */
@@ -4360,6 +4417,65 @@ input {
   font-size: 10px;
   text-align: center;
   color: var(--kd-muted);
+}
+
+.lc-relationship {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 10px;
+  color: var(--kd-ink);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.lc-relationship select {
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--kd-border);
+  border-radius: 9px;
+  background: var(--kd-white);
+  color: var(--kd-ink);
+  font: inherit;
+  font-weight: 500;
+}
+
+.lc-error {
+  margin: 9px 0 0;
+  color: var(--kd-danger);
+  font-size: 9px;
+}
+
+.lc-row:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.lc-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 9px;
+  color: var(--kd-muted);
+  font-size: 9px;
+}
+
+.lc-pager button {
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  border: 1px solid var(--kd-border);
+  border-radius: 7px;
+  background: var(--kd-white);
+  color: var(--kd-ink);
+  cursor: pointer;
+}
+
+.lc-pager button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .lc-foot {
