@@ -1912,6 +1912,32 @@ input {
   border-bottom: 1px solid var(--kd-row-line);
 }
 
+.admin-status-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--kd-muted);
+  font-size: 10px;
+}
+
+.admin-status-filter select {
+  min-width: 120px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--kd-border);
+  border-radius: 9px;
+  background: var(--kd-white);
+  color: var(--kd-ink);
+  font: inherit;
+}
+
+.admin-notice {
+  margin: 0;
+  padding: 9px 14px;
+  color: var(--kd-teal-btn);
+  font-size: 10px;
+}
+
 .adm-table tbody tr:last-child td {
   border-bottom: 0;
 }

@@ -177,10 +177,24 @@ export function mapAccountFromApi(raw) {
 
 export const PRIVILEGES = ["Dashboard", "Teachers", "Students", "Parents", "Admins"];
 
+const PRIVILEGE_CODES = {
+  Dashboard: "DASHBOARD_VIEW",
+  Teachers: "TEACHER_MGMT",
+  Students: "STUDENT_CLASS_MGMT",
+  Parents: "PARENT_MGMT",
+  Admins: "ADMIN_MGMT",
+};
+
+const privilegeCode = (value) => PRIVILEGE_CODES[value] || value;
+
 export function hasAnyPrivilege(account, needs = []) {
   const list = account?.privileges;
-  if (!list) return true;
-  return list.includes("All") || needs.some((n) => list.includes(n));
+  if (account?.isDefaultAdmin || account?.status === "Default") return true;
+  if (!Array.isArray(list)) return false;
+  if (list.includes("All")) return true;
+
+  const held = new Set(list.map(privilegeCode));
+  return needs.some((need) => held.has(privilegeCode(need)));
 }
 
 export const PRIVILEGE_OPTIONS = [
@@ -192,7 +206,8 @@ export const PRIVILEGE_OPTIONS = [
 ];
 
 export const privilegeTitle = (key) =>
-  PRIVILEGE_OPTIONS.find((o) => o.key === key)?.title || key;
+  PRIVILEGE_OPTIONS.find((option) => privilegeCode(option.key) === privilegeCode(key))
+    ?.title || key;
 
 // فارغ بدون داتا تجريبية (للتوافق مع Editprivilegesdrawer.js)
 export const DEMO_DRAFT_ADDS = {};

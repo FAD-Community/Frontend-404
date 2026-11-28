@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import useAccounts from "./Useaccounts";
+import { useAuth } from "../context/AuthContext";
 import { hasAnyPrivilege } from "../data/Accounts";
 
 import {
@@ -58,11 +58,15 @@ export default function NewAdminDrawer({
   onSubmit,
 }) {
   const uid = useId();
-  const { currentAdmin } = useAccounts();
+  const { user } = useAuth();
+  const currentAdmin = user
+    ? { ...user, name: user.fullName || user.name || "Admin" }
+    : null;
 
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
 
   const username = form.username.trim();
   const email = form.email.trim();
@@ -145,6 +149,7 @@ export default function NewAdminDrawer({
       .map((option) => option.key);
 
     setSaving(true);
+    setFormError("");
 
     try {
       await onSubmit?.({
@@ -154,7 +159,7 @@ export default function NewAdminDrawer({
         privileges,
       });
     } catch (error) {
-      console.error("Failed to create admin:", error);
+      setFormError(error.message || "Failed to create admin. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -358,6 +363,8 @@ export default function NewAdminDrawer({
               Select at least one privilege
             </p>
           )}
+
+          {formError && <p className="na-error nad-error" role="alert">{formError}</p>}
 
           {/* Audit */}
           <div className="na-info nad-audit">
