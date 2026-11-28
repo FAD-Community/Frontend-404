@@ -51,6 +51,21 @@ export function AuthProvider({ children }) {
     initializeAuth();
   }, [clearSession]);
 
+  useEffect(() => {
+    const handleSessionExpired = () => clearSession();
+    const handleUserUpdated = (event) => {
+      if (!event.detail) return;
+      setUser(event.detail);
+      localStorage.setItem("user", JSON.stringify(event.detail));
+    };
+    window.addEventListener("auth:session-expired", handleSessionExpired);
+    window.addEventListener("auth:user-updated", handleUserUpdated);
+    return () => {
+      window.removeEventListener("auth:session-expired", handleSessionExpired);
+      window.removeEventListener("auth:user-updated", handleUserUpdated);
+    };
+  }, [clearSession]);
+
   const login = async (credentials) => {
     const data = await loginApi(credentials);
 
@@ -61,6 +76,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem("accessToken", data.accessToken);
     localStorage.setItem("refreshToken", data.refreshToken);
     localStorage.setItem("user", JSON.stringify(data.user));
+    window.dispatchEvent(new CustomEvent("auth:user-updated", { detail: data.user }));
 
     setUser(data.user);
 

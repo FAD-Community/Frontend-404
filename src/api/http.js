@@ -1,3 +1,5 @@
+import { authenticatedFetch } from "./apiClient";
+
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 async function request(method, endpoint, options = {}) {
@@ -35,14 +37,14 @@ const headers = {
   let response;
 
   try {
-    response = await fetch(url.toString(), {
+    response = await authenticatedFetch(url.toString(), {
       ...requestOptions,
       method,
       headers,
       signal,
     });
   } catch (error) {
-    if (error.name === "AbortError") {
+    if (error.name === "AbortError" || error.status) {
       throw error;
     }
 

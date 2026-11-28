@@ -1,3 +1,5 @@
+import { authenticatedFetch } from "./apiClient";
+
 const API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || "").replace(/\/$/, "");
 
 export class ApiError extends Error {
@@ -22,7 +24,7 @@ function getAuthHeaders(extra = {}) {
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await authenticatedFetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: getAuthHeaders(options.headers),
   });
