@@ -6,7 +6,14 @@ import { UnlinkIcon, XIcon, HistoryIcon } from "./Icons";
  * Props: parent, student, onCancel(), onConfirm()
  * استدعيها بـ {target && <ConfirmRemoveLinkModal .../>}
  */
-export default function ConfirmRemoveLinkModal({ parent, student, onCancel, onConfirm }) {
+export default function ConfirmRemoveLinkModal({
+  parent,
+  student,
+  error = "",
+  loading = false,
+  onCancel,
+  onConfirm,
+}) {
   const uid = useId();
   const parentFirst = parent.name.trim().split(" ")[0];
   const childFirst = student.name.trim().split(" ")[0];
@@ -57,15 +64,16 @@ export default function ConfirmRemoveLinkModal({ parent, student, onCancel, onCo
             <HistoryIcon size={13} className="na-info__icon" />
             <p>This action is recorded in the audit log with your name.</p>
           </div>
+          {error && <p className="pl-error" role="alert">{error}</p>}
         </div>
 
         <footer className="confirm__foot">
-          <button type="button" className="btn-outline confirm__btn" onClick={onCancel} autoFocus>
+          <button type="button" className="btn-outline confirm__btn" onClick={onCancel} disabled={loading} autoFocus>
             Cancel
           </button>
-          <button type="button" className="btn-danger confirm__btn" onClick={onConfirm}>
+          <button type="button" className="btn-danger confirm__btn" onClick={onConfirm} disabled={loading}>
             <UnlinkIcon size={12} />
-            Remove link
+            {loading ? "Removing..." : "Remove link"}
           </button>
         </footer>
       </div>

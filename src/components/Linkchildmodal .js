@@ -1,5 +1,5 @@
-import { useEffect, useId, useMemo, useState } from "react";
-import { XIcon, SearchIcon, CheckIcon, LinkIcon } from "./Icons";
+import { useEffect, useId, useState } from "react";
+import { XIcon, SearchIcon, CheckIcon, LinkIcon, ChevronLeftIcon, ChevronRightIcon } from "./Icons";
 
 const initialsOf = (name = "") =>
   name
@@ -12,42 +12,40 @@ const initialsOf = (name = "") =>
 
 const parentsText = (n) => (n === 0 ? "no parent linked" : n === 1 ? "1 parent" : `${n} parents`);
 
-// أول فتح بيظهر بنفس حالة التصميم (بحث "yous" + Youssef Karim مختار). بعد أول ربط بيفتح فاضي.
-const DEMO_QUERY = "yous";
-
 /**
  * Props:
- *  - parent: ولي الأمر اللي هنربطله طفل ({name, pronoun})
- *  - students: كل الطلاب المتاحين للربط (الموجودين + الإضافيين)
- *  - demo: true = يفتح بالقيم التجريبية اللي في التصميم
- *  - onClose(), onSubmit(student)
- *  استدعيه بـ {open && <LinkChildModal .../>} علشان البحث والاختيار يتصفّروا عند كل فتح
+ *  - parent: parent account being linked
+ *  - candidates, page, total, loading, error: current API result
+ *  - onSearch(query), onPageChange(page), onSubmit(candidate, relationship)
  */
-export default function LinkChildModal({ parent, students, demo = false, onClose, onSubmit }) {
+export default function LinkChildModal({
+  parent,
+  candidates = [],
+  page = 1,
+  pageSize = 8,
+  total = 0,
+  loading = false,
+  error = "",
+  onSearch,
+  onPageChange,
+  onClose,
+  onSubmit,
+}) {
   const uid = useId();
-  const [query, setQuery] = useState(demo ? DEMO_QUERY : "");
+  const [query, setQuery] = useState("");
+  const [relationship, setRelationship] = useState("");
+  const [selectedId, setSelectedId] = useState(null);
+  const selected = candidates.find((student) => student.id === selectedId) || null;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  const isLinked = (s) => (s.parents || []).includes(parent.name);
+  useEffect(() => {
+    const timer = setTimeout(() => onSearch?.(query.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [query, onSearch]);
 
-  const q = query.trim().toLowerCase();
-  const matches = (s) => !q || s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q);
-
-  const candidates = useMemo(
-    () => students.filter((s) => !isLinked(s) && matches(s)),
-    [students, parent, q] // eslint-disable-line react-hooks/exhaustive-deps
-  );
-
-  // الأطفال المربوطين فعلاً (باهتين تحت): اللي بيطابقوا البحث + آخر طفل اتربط كتلميح
-  const linkedShown = useMemo(() => {
-    const linked = students.filter(isLinked);
-    const last = linked[linked.length - 1];
-    const shown = linked.filter(matches);
-    if (last && !shown.includes(last)) shown.push(last);
-    return shown;
-  }, [students, parent, q]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const [selectedId, setSelectedId] = useState(() => (demo ? candidates[0]?.id ?? null : null));
-  const selected = candidates.find((s) => s.id === selectedId) || null;
+  useEffect(() => {
+    setSelectedId(null);
+  }, [candidates]);
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose?.();
@@ -62,7 +60,7 @@ export default function LinkChildModal({ parent, students, demo = false, onClose
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (selected) onSubmit?.(selected);
+    if (selected && relationship) onSubmit?.(selected, relationship);
   };
 
   return (
@@ -82,7 +80,7 @@ export default function LinkChildModal({ parent, students, demo = false, onClose
         <header className="lc-head">
           <h2 className="lc-title" id={`${uid}-title`}>Link a child to {parent.name}</h2>
           <p className="lc-sub">
-            {parent.pronoun || "They"}’ll immediately see this child’s records and notifications.
+            {parent.name} will immediately see this child’s records and notifications.
           </p>
           <button type="button" className="na-close lc-close" onClick={onClose} aria-label="Close">
             <XIcon size={14} />
@@ -96,7 +94,11 @@ export default function LinkChildModal({ parent, students, demo = false, onClose
             <input
               type="search"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              maxLength={100}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                onPageChange?.(1);
+              }}
               placeholder="Search students by name or code"
               autoComplete="off"
               aria-label="Search students"
@@ -108,25 +110,40 @@ export default function LinkChildModal({ parent, students, demo = false, onClose
             />
           </label>
 
+          <label className="lc-relationship">
+            Relationship
+            <select value={relationship} onChange={(e) => setRelationship(e.target.value)} required>
+              <option value="">Select relationship</option>
+              <option value="Mother">Mother</option>
+              <option value="Father">Father</option>
+              <option value="Guardian">Guardian</option>
+              <option value="Other">Other</option>
+            </select>
+          </label>
+
+          {error && <p className="lc-error" role="alert">{error}</p>}
+
           <div className="lc-list" role="radiogroup" aria-label="Students">
-            {candidates.map((s) => {
-              const on = s.id === selectedId;
+            {candidates.map((student) => {
+              const on = student.id === selectedId;
               return (
                 <button
-                  key={s.id}
+                  key={student.id}
                   type="button"
                   role="radio"
                   aria-checked={on}
-                  className={`lc-row${on ? " lc-row--on" : ""}`}
-                  onClick={() => setSelectedId(s.id)}
+                  disabled={student.alreadyLinked}
+                  className={`lc-row${on ? " lc-row--on" : ""}${student.alreadyLinked ? " lc-row--linked" : ""}`}
+                  onClick={() => setSelectedId(student.id)}
                 >
-                  <span className={`avatar avatar--${s.avatar} lc-avatar`}>{initialsOf(s.name)}</span>
+                  <span className="avatar avatar--cyan lc-avatar">{initialsOf(student.fullName)}</span>
                   <span className="lc-row__text">
-                    <strong>{s.name}</strong>
+                    <strong>{student.fullName}</strong>
                     <span>
-                      {s.className} · #{s.code} · {parentsText((s.parents || []).length)}
+                      {student.class?.name || "—"} · #{student.studentCode} · {parentsText(student.parentCount)}
                     </span>
                   </span>
+                  {student.alreadyLinked && <span className="lc-pill">Already linked</span>}
                   {on && (
                     <span className="lc-row__check" aria-hidden="true">
                       <CheckIcon size={10} strokeWidth={2.8} />
@@ -136,21 +153,23 @@ export default function LinkChildModal({ parent, students, demo = false, onClose
               );
             })}
 
-            {linkedShown.map((s) => (
-              <div key={s.id} className="lc-row lc-row--linked" aria-disabled="true">
-                <span className={`avatar avatar--${s.avatar} lc-avatar`}>{initialsOf(s.name)}</span>
-                <span className="lc-row__text">
-                  <strong>{s.name}</strong>
-                  <span>Already linked</span>
-                </span>
-                <span className="lc-pill">Linked</span>
-              </div>
-            ))}
-
-            {candidates.length === 0 && linkedShown.length === 0 && (
+            {loading ? (
+              <p className="lc-empty">Loading students...</p>
+            ) : candidates.length === 0 && !error ? (
               <p className="lc-empty">No students found.</p>
-            )}
+            ) : null}
           </div>
+          {totalPages > 1 && (
+            <div className="lc-pager">
+              <button type="button" aria-label="Previous page" disabled={page <= 1 || loading} onClick={() => onPageChange?.(page - 1)}>
+                <ChevronLeftIcon size={13} />
+              </button>
+              <span>{page} / {totalPages}</span>
+              <button type="button" aria-label="Next page" disabled={page >= totalPages || loading} onClick={() => onPageChange?.(page + 1)}>
+                <ChevronRightIcon size={13} />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ===== Footer ===== */}
@@ -158,7 +177,7 @@ export default function LinkChildModal({ parent, students, demo = false, onClose
           <button type="button" className="btn-outline lc-btn" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className="btn-primary lc-btn" disabled={!selected}>
+          <button type="submit" className="btn-primary lc-btn" disabled={!selected || !relationship || loading}>
             <LinkIcon size={12} />
             Link child
           </button>
