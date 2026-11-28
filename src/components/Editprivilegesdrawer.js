@@ -20,10 +20,18 @@ const joinTitles = (keys) => keys.map(privilegeTitle).join(", ");
  *  - onSave(id, privileges): بيتنادى بالصلاحيات الجديدة بعد التعديل
  *  استدعيه بـ {account && <EditPrivilegesDrawer key={account.id} .../>} علشان المسودة تتصفّر عند كل فتح
  */
-export default function EditPrivilegesDrawer({ account, currentAdmin, onClose, onSave }) {
+export default function EditPrivilegesDrawer({
+  account,
+  currentAdmin,
+  auditLoading = false,
+  auditError = "",
+  onClose,
+  onSave,
+}) {
   const uid = useId();
 
   const isDefault = account.status === "Default"; // Default admin معاه كل الصلاحيات ومينفعش يتعدّل (FR-06)
+  const isOwnAccount = String(account.id) === String(currentAdmin?.id);
   const original = useMemo(
     () => (isDefault ? [...ORDER] : sortKeys(account.privileges || [])),
     [account, isDefault]
@@ -39,6 +47,8 @@ export default function EditPrivilegesDrawer({ account, currentAdmin, onClose, o
     return sortKeys([...original, ...adds]);
   });
   const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   const added = draft.filter((k) => !original.includes(k));
   const removed = original.filter((k) => !draft.includes(k));
@@ -62,12 +72,21 @@ export default function EditPrivilegesDrawer({ account, currentAdmin, onClose, o
     };
   }, [onClose]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isDefault || !changed) return;
+    if (isDefault || isOwnAccount || !changed || saving) return;
     setSubmitted(true);
     if (draft.length === 0) return; // لازم صلاحية واحدة على الأقل
-    onSave?.(account.id, draft);
+
+    setSaving(true);
+    setSaveError("");
+    try {
+      await onSave?.(account.id, draft);
+    } catch (error) {
+      setSaveError(error.message || "Failed to update privileges.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   /* ----- Audit history: التغييرات المعلّقة أولاً ثم السجل المحفوظ (الأحدث فوق) ----- */
@@ -94,6 +113,15 @@ export default function EditPrivilegesDrawer({ account, currentAdmin, onClose, o
         return [
           ...(e.added || []).map((k) => ({ by: e.by, text: `added ${privilegeTitle(k)}`, time: fmtDateTime(e.at) })),
           ...(e.removed || []).map((k) => ({ by: e.by, text: `removed ${privilegeTitle(k)}`, time: fmtDateTime(e.at) })),
+        ];
+      }
+      if (e.type === "audit") {
+        return [
+          {
+            by: e.by || "System",
+            text: `${e.text || "Updated account"}${e.target ? ` · ${e.target}` : ""}`,
+            time: fmtDateTime(e.at),
+          },
         ];
       }
       return [];
@@ -129,7 +157,7 @@ export default function EditPrivilegesDrawer({ account, currentAdmin, onClose, o
             {PRIVILEGE_OPTIONS.map(({ key, title }) => {
               const locked = lockedKeys.includes(key);
               const checked = !locked && draft.includes(key);
-              const readOnly = isDefault;
+              const readOnly = isDefault || isOwnAccount;
               return (
                 <label
                   key={key}
@@ -162,6 +190,8 @@ export default function EditPrivilegesDrawer({ account, currentAdmin, onClose, o
             <p className="ep-note">
               The default admin always has every privilege and can’t be changed (FR-06).
             </p>
+          ) : isOwnAccount ? (
+            <p className="ep-note">You can’t change your own privileges.</p>
           ) : (
             lockedKeys.length > 0 && (
               <p className="ep-note">
@@ -173,6 +203,9 @@ export default function EditPrivilegesDrawer({ account, currentAdmin, onClose, o
           )}
 
           <h3 className="ep-section">Audit history</h3>
+          {auditLoading && <p className="ep-note">Loading audit history...</p>}
+          {auditError && <p className="na-error" role="alert">{auditError}</p>}
+          {saveError && <p className="na-error" role="alert">{saveError}</p>}
           <ol className="ep-events">
             {entries.map((e, i) => (
               <li className="ep-event" key={`${e.text}-${i}`}>
@@ -190,12 +223,12 @@ export default function EditPrivilegesDrawer({ account, currentAdmin, onClose, o
 
         {/* ===== Footer ===== */}
         <footer className="drawer__foot">
-          <button type="button" className="btn-outline drawer__btn" onClick={onClose}>
+          <button type="button" className="btn-outline drawer__btn" onClick={onClose} disabled={saving}>
             {isDefault ? "Close" : "Cancel"}
           </button>
-          {!isDefault && (
-            <button type="submit" className="btn-primary drawer__btn" disabled={!changed}>
-              Save changes
+          {!isDefault && !isOwnAccount && (
+            <button type="submit" className="btn-primary drawer__btn" disabled={!changed || saving}>
+              {saving ? "Saving..." : "Save changes"}
             </button>
           )}
         </footer>

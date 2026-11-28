@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import Logo from "./Logo";
-import useAccounts from "./Useaccounts";
-import { hasAnyPrivilege, getInitials } from "../data/Accounts";
+import { useAuth } from "../context/AuthContext";
+import { getAvatarTone, hasAnyPrivilege, getInitials } from "../data/Accounts";
 import {
   DashboardIcon,
   UsersIcon,
@@ -25,13 +25,13 @@ const NAV_ITEMS = [
 
 export default function Sidebar() {
   const navigate = useNavigate();
-  const { currentAdmin } = useAccounts();
+  const { user, logout } = useAuth();
 
-  const name = currentAdmin?.name || "Admin";
-  const roleLabel = currentAdmin?.status === "Default" ? "Default admin" : currentAdmin?.role || "Admin";
+  const name = user?.fullName || user?.name || "Admin";
+  const roleLabel = user?.isDefaultAdmin ? "Default admin" : user?.role || "Admin";
 
-  const handleLogout = () => {
-    // TODO: امسح التوكن / الجلسة هنا
+  const handleLogout = async () => {
+    await logout();
     navigate("/login");
   };
 
@@ -45,7 +45,7 @@ export default function Sidebar() {
 
       <nav className="sidebar__nav" aria-label="Main">
         {NAV_ITEMS.map(({ to, label, Icon, needs }) =>
-          hasAnyPrivilege(currentAdmin, needs) ? (
+          hasAnyPrivilege(user, needs) ? (
             <NavLink
               key={to}
               to={to}
@@ -71,7 +71,7 @@ export default function Sidebar() {
       </nav>
 
       <div className="sidebar__user">
-        <span className={`sidebar__avatar avatar--${currentAdmin?.avatar || "cyan"}`}>
+        <span className={`sidebar__avatar avatar--${getAvatarTone(user)}`}>
           {getInitials(name)}
         </span>
         <div className="sidebar__user-info">
